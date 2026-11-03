@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import worker from "../src/worker.js";
 
 function makeKv(initial = {}) {
@@ -66,6 +66,9 @@ function makeDb(options = {}) {
           if (sql.includes("FROM gs_market_events")) {
             return { event_count: 0, last_received_at: null };
           }
+          if (sql.includes("FROM gs_audit_log")) {
+            return rows.get(args[0]) || null;
+          }
           return null;
         },
         async all() {
@@ -117,6 +120,44 @@ function evidenceRule(overrides = {}) {
   };
 }
 
+function approvalRulePayload(rule) {
+  return {
+    id: String(rule.id || ""),
+    validationStatus: String(rule.validationStatus || ""),
+    contentType: String(rule.contentType || ""),
+    category: String(rule.category || ""),
+    rule: String(rule.rule || rule.description || ""),
+    conditions: Array.isArray(rule.conditions) ? rule.conditions.map(value => String(value)) : [],
+    priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : null,
+    sourcePostId: String(rule.sourcePostId || ""),
+    sourcePostUrl: String(rule.sourcePostUrl || ""),
+    sourceExcerptHash: String(rule.sourceExcerptHash || ""),
+    sourcePostContentHash: String(rule.sourcePostContentHash || ""),
+    sourceExcerptVerified: rule.sourceExcerptVerified === true
+  };
+}
+
+function makeApprovalBody(ids, rules, overrides = {}) {
+  const issuedAt = overrides.issuedAt ?? Date.now();
+  const expiresAt = overrides.expiresAt ?? issuedAt + 300000;
+  const entries = rules.map(rule => ({
+    id: String(rule.id),
+    contentHash: createHash("sha256").update(JSON.stringify(approvalRulePayload(rule))).digest("hex")
+  })).sort((left, right) => left.id.localeCompare(right.id));
+  const payload = {
+    ids: ids.map(String).sort(),
+    confirmation: overrides.confirmation ?? "APPROVE",
+    approvalNote: overrides.approvalNote ?? "Owner review",
+    approverId: overrides.approverId ?? "71007767",
+    requestId: overrides.requestId ?? randomUUID(),
+    issuedAt,
+    expiresAt,
+    ruleSetHash: overrides.ruleSetHash ?? createHash("sha256").update(JSON.stringify(entries)).digest("hex")
+  };
+  const approvalPayloadHash = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  return { ...payload, approvalPayloadHash: overrides.approvalPayloadHash ?? approvalPayloadHash };
+}
+
 function makeRequest(path, body, headers = {}) {
   return new Request("https://financial.test" + path, {
     method: body === undefined ? "GET" : "POST",
@@ -133,11 +174,7 @@ const ctx = { waitUntil() {} };
 test("general API key cannot approve NDS rules", async () => {
   const rule = evidenceRule();
   const state = makeEnv({ pending: [rule] });
-  const response = await worker.fetch(makeRequest("/training/approve", {
-    confirmation: "APPROVE",
-    ids: [rule.id],
-    approvalNote: "Owner review"
-  }, { "X-API-Key": "general-api-key" }), state.env, ctx);
+  const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), { "X-API-Key": "general-api-key" }), state.env, ctx);
 
   assert.equal(response.status, 403);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
@@ -149,18 +186,10 @@ test("approval requires the explicit confirmation and unique IDs", async () => {
   const state = makeEnv({ pending: [rule] });
   const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
 
-  const noConfirmation = await worker.fetch(makeRequest("/training/approve", {
-    confirmation: "YES",
-    ids: [rule.id],
-    approvalNote: "Owner review"
-  }, headers), state.env, ctx);
+  const noConfirmation = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule], { confirmation: "YES" }), headers), state.env, ctx);
   assert.equal(noConfirmation.status, 400);
 
-  const duplicateIds = await worker.fetch(makeRequest("/training/approve", {
-    confirmation: "APPROVE",
-    ids: [rule.id, rule.id],
-    approvalNote: "Owner review"
-  }, headers), state.env, ctx);
+  const duplicateIds = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id, rule.id], [rule]), headers), state.env, ctx);
   assert.equal(duplicateIds.status, 400);
 });
 
@@ -172,11 +201,7 @@ test("rules without rule-specific verified source evidence cannot be approved", 
     sourceExcerpt: "A non-empty page excerpt that is not tied to a specific post."
   };
   const state = makeEnv({ pending: [rule] });
-  const response = await worker.fetch(makeRequest("/training/approve", {
-    confirmation: "APPROVE",
-    ids: [rule.id],
-    approvalNote: "Owner review"
-  }, { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
+  const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
 
   assert.equal(response.status, 409);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
@@ -186,11 +211,7 @@ test("rules without rule-specific verified source evidence cannot be approved", 
 test("verified owner approval writes approved rules and a D1 audit record", async () => {
   const rule = evidenceRule();
   const state = makeEnv({ pending: [rule] });
-  const response = await worker.fetch(makeRequest("/training/approve", {
-    confirmation: "APPROVE",
-    ids: [rule.id],
-    approvalNote: "Reviewed source post and approved by owner."
-  }, { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
+  const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule], { approvalNote: "Reviewed source post and approved by owner." }), { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
 
   assert.equal(response.status, 200);
   const result = await response.json();
@@ -201,14 +222,14 @@ test("verified owner approval writes approved rules and a D1 audit record", asyn
   const pending = await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" });
   assert.equal(active.length, 1);
   assert.equal(active[0].validationStatus, "approved");
-  assert.equal(active[0].approvedBy, "OWNER_L0_VIA_L1");
+  assert.equal(active[0].approvedBy, "OWNER_L0_VIA_L1:71007767");
   assert.equal(pending.length, 0);
 
   assert.equal(state.DB.rows.size, 1);
   const audit = [...state.DB.rows.values()][0];
   assert.equal(audit.event_type, "NDS_RULE_APPROVAL");
   assert.equal(audit.outcome, "approved");
-  assert.equal(audit.actor_agent_id, "OWNER");
+  assert.equal(audit.actor_agent_id, "OWNER:71007767");
 });
 
 test("invalid excerpt hash and non-allowlisted source URL are rejected", async () => {
@@ -233,23 +254,54 @@ test("already active rule IDs cannot be re-approved", async () => {
   const rule = evidenceRule();
   const active = [{ ...rule, validationStatus: "approved" }];
   const state = makeEnv({ pending: [rule], active });
-  const response = await worker.fetch(makeRequest("/training/approve", {
-    confirmation: "APPROVE",
-    ids: [rule.id],
-    approvalNote: "Owner review"
-  }, { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
+  const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
   assert.equal(response.status, 409);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 1);
+});
+
+test("approval requires a fresh owner payload hash and five-minute expiry", async () => {
+  const rule = evidenceRule();
+  const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
+  const expired = makeApprovalBody([rule.id], [rule], {
+    issuedAt: Date.now() - 600000,
+    expiresAt: Date.now() - 300000
+  });
+  const state = makeEnv({ pending: [rule] });
+  const expiredResponse = await worker.fetch(makeRequest("/training/approve", expired, headers), state.env, ctx);
+  assert.equal(expiredResponse.status, 409);
+
+  const badHash = makeApprovalBody([rule.id], [rule], {
+    approvalPayloadHash: "0".repeat(64)
+  });
+  const badHashResponse = await worker.fetch(makeRequest("/training/approve", badHash, headers), state.env, ctx);
+  assert.equal(badHashResponse.status, 403);
+});
+
+test("material rule changes invalidate the reviewed rule-set hash", async () => {
+  const rule = evidenceRule();
+  const body = makeApprovalBody([rule.id], [rule], { ruleSetHash: "0".repeat(64) });
+  const state = makeEnv({ pending: [rule] });
+  const response = await worker.fetch(makeRequest("/training/approve", body, {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 409);
+  assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
+});
+
+test("approval rejects a non-owner actor even with a correctly hashed payload", async () => {
+  const rule = evidenceRule();
+  const body = makeApprovalBody([rule.id], [rule], { approverId: "12345" });
+  const state = makeEnv({ pending: [rule] });
+  const response = await worker.fetch(makeRequest("/training/approve", body, {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 403);
 });
 
 test("audit insert failure leaves pending and active knowledge unchanged", async () => {
   const rule = evidenceRule();
   const state = makeEnv({ pending: [rule], dbOptions: { failInsert: true } });
-  const response = await worker.fetch(makeRequest("/training/approve", {
-    confirmation: "APPROVE",
-    ids: [rule.id],
-    approvalNote: "Owner review"
-  }, { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
+  const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
   assert.equal(response.status, 503);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
@@ -258,11 +310,7 @@ test("audit insert failure leaves pending and active knowledge unchanged", async
 test("audit update failure is surfaced as pending reconciliation", async () => {
   const rule = evidenceRule();
   const state = makeEnv({ pending: [rule], dbOptions: { failUpdate: true } });
-  const response = await worker.fetch(makeRequest("/training/approve", {
-    confirmation: "APPROVE",
-    ids: [rule.id],
-    approvalNote: "Owner review"
-  }, { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
+  const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
   assert.equal(response.status, 503);
   const result = await response.json();
   assert.equal(result.auditStatus, "pending_reconciliation");
@@ -273,11 +321,7 @@ test("audit update failure is surfaced as pending reconciliation", async () => {
 test("approval fails closed when the audit D1 binding is absent", async () => {
   const rule = evidenceRule();
   const state = makeEnv({ pending: [rule], withDb: false });
-  const response = await worker.fetch(makeRequest("/training/approve", {
-    confirmation: "APPROVE",
-    ids: [rule.id],
-    approvalNote: "Owner review"
-  }, { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
+  const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
 
   assert.equal(response.status, 503);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
