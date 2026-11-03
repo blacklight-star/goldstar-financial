@@ -131,7 +131,7 @@ async function hasVerifiedRuleEvidence(rule) {
   try {
     var sourceUrl = new URL(sourcePostUrl);
     if (sourceUrl.protocol !== "https:" || sourceUrl.hostname !== "t.me") return false;
-    var match = sourceUrl.pathname.match(/^\\/s\\/([A-Za-z0-9_]+)\\/(\\d+)$/);
+    var match = sourceUrl.pathname.match(/^\/s\/([A-Za-z0-9_]+)\/(\d+)$/);
     if (!match || match[2] !== sourcePostId) return false;
     if (!NDS_CHANNELS.some(function(channel) { return channel.name === match[1]; })) return false;
   } catch (_) {
