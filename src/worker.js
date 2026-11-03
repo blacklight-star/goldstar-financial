@@ -140,6 +140,10 @@ async function hasVerifiedRuleEvidence(rule) {
   return (await sha256Hex(excerpt)) === expectedHash;
 }
 
+function parseJsonSafe(value) {
+  try { return JSON.parse(value); } catch (_) { return null; }
+}
+
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -162,7 +166,7 @@ export default {
       if (path === "/") return ok({
         name: "Goldstar L2", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED, analysisMode: "disabled_until_verified_market_data",
         styles: ["ICT", "RTM", "NDS"],
-        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/analyze"]
+        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/market-data/status","/market-data/latest","/analyze"]
       });
 
       if (path === "/status") {
@@ -325,6 +329,54 @@ export default {
           env.STRATEGY.put("strategy_updated", candidate.generatedAt)
         ]));
         return ok({ success: true, status: "candidate_unvalidated", approved: false, strategyLength: strategy.length, ruleCount: strategyRules.length, totalApprovedRules: k3.all.length, sourceRulesHash: sourceRulesHash, strategy: strategy });
+      }
+
+      if (path === "/market-data/status" && method === "GET") {
+        if (!env.DB || typeof env.DB.prepare !== "function") return err("Market-data D1 binding unavailable", 503);
+        try {
+          var rawStatus = await env.DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM tv_events").first();
+          var normalizedStatus = await env.DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM gs_market_events").first();
+          var rawEventCount = Number(rawStatus && rawStatus.event_count || 0);
+          var normalizedEventCount = Number(normalizedStatus && normalizedStatus.event_count || 0);
+          return ok({
+            source: "TradingView webhook D1",
+            rawEventCount: rawEventCount,
+            normalizedEventCount: normalizedEventCount,
+            lastRawEventAt: rawStatus && rawStatus.last_received_at || null,
+            lastNormalizedEventAt: normalizedStatus && normalizedStatus.last_received_at || null,
+            rawIngestionReady: rawEventCount > 0,
+            marketDataReady: normalizedEventCount > 0,
+            marketAnalysisEnabled: MARKET_ANALYSIS_ENABLED
+          });
+        } catch (_) {
+          return err("Market-data status query failed", 503);
+        }
+      }
+
+      if (path === "/market-data/latest" && method === "GET") {
+        if (!env.DB || typeof env.DB.prepare !== "function") return err("Market-data D1 binding unavailable", 503);
+        var requestedLimit = Number(url.searchParams.get("limit") || 25);
+        var marketLimit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, Math.floor(requestedLimit))) : 25;
+        var marketSymbol = String(url.searchParams.get("symbol") || "").trim().slice(0, 100);
+        var marketTimeframe = String(url.searchParams.get("timeframe") || "").trim().slice(0, 40);
+        try {
+          var marketResult = await env.DB.prepare(
+            "SELECT id, event_hash, received_at, symbol, exchange_name, timeframe, event_type, payload_json FROM tv_events WHERE (? = '' OR UPPER(symbol) = UPPER(?)) AND (? = '' OR UPPER(timeframe) = UPPER(?)) ORDER BY received_at DESC LIMIT ?"
+          ).bind(marketSymbol, marketSymbol, marketTimeframe, marketTimeframe, marketLimit).all();
+          var marketEvents = (marketResult && Array.isArray(marketResult.results) ? marketResult.results : []).map(function(row) {
+            var event = Object.assign({}, row, { payload: parseJsonSafe(row.payload_json) });
+            delete event.payload_json;
+            return event;
+          });
+          return ok({
+            source: "tv_events",
+            count: marketEvents.length,
+            filters: { symbol: marketSymbol || null, timeframe: marketTimeframe || null },
+            events: marketEvents
+          });
+        } catch (_) {
+          return err("Market-data event query failed", 503);
+        }
       }
 
       if (path === "/analyze" && method === "POST") {
