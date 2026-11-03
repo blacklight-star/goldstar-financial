@@ -144,6 +144,30 @@ function parseJsonSafe(value) {
   try { return JSON.parse(value); } catch (_) { return null; }
 }
 
+function financialRuleEvidencePayload(rule) {
+  return {
+    id: String(rule.id || ""),
+    validationStatus: String(rule.validationStatus || ""),
+    contentType: String(rule.contentType || ""),
+    category: String(rule.category || ""),
+    rule: String(rule.rule || rule.description || ""),
+    conditions: Array.isArray(rule.conditions) ? rule.conditions.map(function(value) { return String(value); }) : [],
+    priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : null,
+    sourcePostId: String(rule.sourcePostId || ""),
+    sourcePostUrl: String(rule.sourcePostUrl || ""),
+    sourceExcerptHash: String(rule.sourceExcerptHash || ""),
+    sourcePostContentHash: String(rule.sourcePostContentHash || ""),
+    sourceExcerptVerified: rule.sourceExcerptVerified === true
+  };
+}
+
+function constantTimeEqual(left, right) {
+  if (typeof left !== "string" || typeof right !== "string" || left.length !== right.length) return false;
+  var difference = 0;
+  for (var i = 0; i < left.length; i++) difference |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  return difference === 0;
+}
+
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -226,23 +250,73 @@ export default {
         var activeIds = new Set(active.map(function(rule) { return String(rule.id); }));
         var alreadyActive = selected.filter(function(rule) { return activeIds.has(String(rule.id)); });
         if (alreadyActive.length) return err("One or more selected IDs are already active; no changes made", 409);
-        var approvalNote = String(approvalBody.approvalNote || "").trim().slice(0, 500);
-        if (!approvalNote) return err("A non-empty approval note is required", 400);
+        var rawApprovalNote = String(approvalBody.approvalNote || "").trim();
+        if (!rawApprovalNote || rawApprovalNote.length > 500) return err("A non-empty approval note of at most 500 characters is required", 400);
+        var approvalNote = rawApprovalNote;
+        var approverId = String(approvalBody.approverId || "").trim();
+        var requestId = String(approvalBody.requestId || "").trim();
+        var issuedAt = Number(approvalBody.issuedAt);
+        var expiresAt = Number(approvalBody.expiresAt);
+        var ruleSetHash = String(approvalBody.ruleSetHash || "").trim().toLowerCase();
+        var approvalPayloadHash = String(approvalBody.approvalPayloadHash || "").trim().toLowerCase();
+        var nowMs = Date.now();
+        if (approverId !== "71007767") return err("Approval actor is not the configured L0 owner", 403);
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) return err("A valid one-time approval request ID is required", 400);
+        if (!Number.isSafeInteger(issuedAt) || !Number.isSafeInteger(expiresAt) ||
+            issuedAt > nowMs + 30000 || issuedAt < nowMs - 300000 ||
+            expiresAt <= nowMs || expiresAt <= issuedAt || expiresAt - issuedAt > 300000) {
+          return err("Approval request is expired or outside the permitted time window", 409);
+        }
+        if (!/^[a-f0-9]{64}$/.test(ruleSetHash) || !/^[a-f0-9]{64}$/.test(approvalPayloadHash)) return err("Approval payload hashes are missing or malformed", 400);
+        var canonicalApproval = {
+          ids: ids.map(String).sort(),
+          confirmation: "APPROVE",
+          approvalNote: approvalNote,
+          approverId: approverId,
+          requestId: requestId,
+          issuedAt: issuedAt,
+          expiresAt: expiresAt,
+          ruleSetHash: ruleSetHash
+        };
+        var computedApprovalHash = await sha256Hex(JSON.stringify(canonicalApproval));
+        if (!constantTimeEqual(computedApprovalHash, approvalPayloadHash)) return err("Approval payload hash mismatch", 403);
+        var evidenceHashes = [];
+        for (var ri = 0; ri < selected.length; ri++) {
+          evidenceHashes.push({
+            id: String(selected[ri].id),
+            contentHash: await sha256Hex(JSON.stringify(financialRuleEvidencePayload(selected[ri])))
+          });
+        }
+        evidenceHashes.sort(function(left, right) { return left.id.localeCompare(right.id); });
+        var computedRuleSetHash = await sha256Hex(JSON.stringify(evidenceHashes));
+        if (!constantTimeEqual(computedRuleSetHash, ruleSetHash)) return err("Pending rule content changed since owner review; refresh /finpending", 409);
         if (!env.DB || typeof env.DB.prepare !== "function") return err("Audit database binding unavailable; approval is disabled", 503);
+        try {
+          var priorAudit = await env.DB.prepare("SELECT event_id FROM gs_audit_log WHERE event_id = ?").bind(requestId).first();
+          if (priorAudit) return err("Approval request ID has already been used", 409);
+        } catch (_) {
+          return err("Approval replay check unavailable; approval is disabled", 503);
+        }
         var now = new Date().toISOString();
         var promoted = selected.map(function(rule) {
           return Object.assign({}, rule, {
             validationStatus: "approved",
             approvedAt: now,
-            approvedBy: "OWNER_L0_VIA_L1",
+            approvedBy: "OWNER_L0_VIA_L1:" + approverId,
             approvalNote: approvalNote
           });
         });
         var remaining = pending.filter(function(rule) { return ids.indexOf(String(rule.id)) < 0; });
-        var auditId = crypto.randomUUID();
+        var auditId = requestId;
         var auditDetails = {
           actor: "OWNER_L0_VIA_L1",
+          approverId: approverId,
           channel: "L1_Telegram",
+          requestId: requestId,
+          issuedAt: issuedAt,
+          expiresAt: expiresAt,
+          approvalPayloadHash: approvalPayloadHash,
+          ruleSetHash: ruleSetHash,
           approvalNote: approvalNote,
           ruleIds: ids,
           sourceEvidence: selected.map(function(rule) {
@@ -252,7 +326,7 @@ export default {
         };
         try {
           await env.DB.prepare("INSERT INTO gs_audit_log (event_id, actor_agent_id, event_type, resource_type, resource_id, outcome, details_json) VALUES (?, ?, ?, ?, ?, ?, ?)")
-            .bind(auditId, "OWNER", "NDS_RULE_APPROVAL", "knowledge_NDS", ids.join(","), "requested", JSON.stringify(auditDetails)).run();
+            .bind(auditId, "OWNER:" + approverId, "NDS_RULE_APPROVAL", "knowledge_NDS", ids.join(","), "requested", JSON.stringify(auditDetails)).run();
         } catch (_) {
           return err("Approval audit could not be recorded; no knowledge changes made", 503);
         }
