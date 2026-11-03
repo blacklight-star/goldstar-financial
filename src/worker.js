@@ -138,6 +138,8 @@ export default {
         return ok({ status: "pending_review", count: pendingRules.length, returned: Math.min(limit, pendingRules.length), rules: pendingRules.slice(0, limit) });
       }
 
+      if (path === "/training/approve" && method === "POST" && !validBridge) return err("L1 bridge authorization required", 403);
+
       if (path === "/training/approve" && method === "POST") {
         var approvalBody;
         try { approvalBody = await body(request); } catch (e) { return err("Invalid approval payload", 400); }
