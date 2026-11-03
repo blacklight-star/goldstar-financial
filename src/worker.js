@@ -1,9 +1,11 @@
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
+  "Access-Control-Allow-Headers": "Content-Type, X-API-Key, X-Goldstar-Bridge-Key",
 };
 const AI_MODEL = "@cf/zai-org/glm-4.7-flash";
+// Fail closed until a verified market-data consumer is connected and tested.
+const MARKET_ANALYSIS_ENABLED = false;
 const KV_CACHE_TTL = 60;
 const NDS_CHANNELS = [
   {url:"https://t.me/s/NDS4ALLVIDEOS",name:"NDS4ALLVIDEOS"},
@@ -79,7 +81,6 @@ async function getRules(env) {
   var legacy = { ict: i.length - ai.length, rtm: r.length - ar.length, nds: n.length - an.length };
   return { ict: ai, rtm: ar, nds: an, all: ai.concat(ar, an), legacy: legacy, legacyTotal: legacy.ict + legacy.rtm + legacy.nds };
 }
-var Q = String.fromCharCode(34);
 
 export default {
   async fetch(request, env, ctx) {
@@ -90,17 +91,18 @@ export default {
       if (method === "OPTIONS") return new Response(null, { headers: CORS });
 
       var bridgeKey = request.headers.get("X-Goldstar-Bridge-Key");
-      var legacyKey = request.headers.get("X-API-Key") || url.searchParams.get("key");
+      // API keys are accepted only in headers; query-string credentials can leak through logs and history.
+      var legacyKey = request.headers.get("X-API-Key");
       if (path !== "/health") {
         var validBridge = !!(bridgeKey && env.L1_BRIDGE_KEY && bridgeKey === env.L1_BRIDGE_KEY);
         var validLegacy = !!(legacyKey && env.API_KEY && legacyKey === env.API_KEY);
         if (!validBridge && !validLegacy) return err("Auth required", 401);
       }
 
-      if (path === "/health") return ok({ status: "ok", version: "3.0-final" });
+      if (path === "/health") return ok({ status: "ok", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED });
 
       if (path === "/") return ok({
-        name: "Goldstar L2", version: "3.0-final",
+        name: "Goldstar L2", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED, analysisMode: "disabled_until_verified_market_data",
         styles: ["ICT", "RTM", "NDS"],
         endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/training/batch","/strategy/synthesize","/analyze"]
       });
@@ -108,7 +110,7 @@ export default {
       if (path === "/status") {
         var k = await getRules(env);
         var strat = await env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL }).catch(function() { return null; });
-        return ok({ totalRules: k.all.length, approvedRules: k.all.length, legacyRules: k.legacyTotal, legacy: k.legacy, strategyReady: !!strat, ict: k.ict.length, rtm: k.rtm.length, nds: k.nds.length });
+        return ok({ totalRules: k.all.length, approvedRules: k.all.length, legacyRules: k.legacyTotal, legacy: k.legacy, strategyReady: !!strat, analysisEnabled: MARKET_ANALYSIS_ENABLED, ict: k.ict.length, rtm: k.rtm.length, nds: k.nds.length });
       }
 
       if (path === "/training/load-prebuilt" && method === "POST") {
@@ -197,18 +199,10 @@ export default {
       }
 
       if (path === "/analyze" && method === "POST") {
-        var b;
-        try { b = await body(request); } catch (e) { return err(e.message); }
-        if (!b.symbol || !b.timeframe) return err("symbol and timeframe required");
-        var k4 = await getRules(env);
-        if (!k4.all.length) return err("No approved trading knowledge. Legacy rules are unverified and cannot support trade analysis.", 409);
-        var s4 = await env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL }).catch(function() { return null; }) || "no strategy";
-        var jsonExample = "{" + Q + "direction" + Q + ":" + Q + "LONG" + Q + "," + Q + "confidence" + Q + ":75," + Q + "reasoning" + Q + ":" + Q + "short" + Q + "}";
-        var prompt2 = "You are a trading assistant. Market: " + b.symbol + " timeframe: " + b.timeframe + ". Strategy: " + s4.substring(0, 500) + ". Rules: " + JSON.stringify(k4.all.slice(0, 5)) + ". Respond ONLY as JSON: " + jsonExample;
-        var raw = await ai(env, prompt2);
-        if (!raw) return err("AI empty response", 502);
-        var analysis = extractJSON(raw);
-        return ok({ symbol: b.symbol, timeframe: b.timeframe, analysis: analysis || raw, timestamp: Date.now() });
+        if (!MARKET_ANALYSIS_ENABLED) {
+          return err("Market analysis is disabled until a verified market-data feed is connected, consumed, and validated. No directional signal was generated.", 503);
+        }
+        return err("Market analysis handler is not configured.", 503);
       }
 
       if (path === "/training/batch" && method === "POST") {
