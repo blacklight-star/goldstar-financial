@@ -23,11 +23,16 @@ function makeKv(initial = {}) {
 
 function makeDb() {
   const rows = new Map();
+  const events = [];
+  const queries = [];
   return {
     rows,
+    events,
+    queries,
     prepare(sql) {
       return {
         bind(...args) {
+          queries.push({ sql, args });
           return {
             async run() {
               if (sql.startsWith("INSERT INTO gs_audit_log")) {
@@ -48,6 +53,18 @@ function makeDb() {
                 }
               }
               return { success: true, meta: { changes: 1 } };
+            },
+            async first() {
+              if (sql.includes("FROM tv_events")) {
+                return { event_count: events.length, last_received_at: events[0]?.received_at || null };
+              }
+              if (sql.includes("FROM gs_market_events")) {
+                return { event_count: 0, last_received_at: null };
+              }
+              return null;
+            },
+            async all() {
+              return { results: events.slice(0, Number(args[4] || 100)) };
             }
           };
         }
@@ -211,6 +228,60 @@ test("duplicate NDS ingestion route is disabled to enforce a single writer", asy
 
   assert.equal(response.status, 409);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
+});
+
+test("market-data status reads raw and normalized D1 counts but remains fail-closed", async () => {
+  const state = makeEnv();
+  const response = await worker.fetch(makeRequest("/market-data/status", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.rawEventCount, 0);
+  assert.equal(result.normalizedEventCount, 0);
+  assert.equal(result.marketDataReady, false);
+  assert.equal(result.marketAnalysisEnabled, false);
+});
+
+test("market-data latest returns parsed raw TradingView events with bounded filters", async () => {
+  const state = makeEnv();
+  state.DB.events.push({
+    id: "event-1",
+    event_hash: "hash-1",
+    received_at: "2026-11-04T10:00:00.000Z",
+    symbol: "EURUSD",
+    exchange_name: "OANDA",
+    timeframe: "15",
+    event_type: "alert",
+    payload_json: JSON.stringify({ signal: "breakout" })
+  });
+  const response = await worker.fetch(makeRequest("/market-data/latest?symbol=eurusd&timeframe=15&limit=10", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.count, 1);
+  assert.equal(result.events[0].payload.signal, "breakout");
+  assert.equal("payload_json" in result.events[0], false);
+  assert.deepEqual(state.DB.queries.at(-1).args, ["eurusd", "eurusd", "15", "15", 10]);
+});
+
+test("market-data routes fail closed when D1 is not bound", async () => {
+  const state = makeEnv({ withDb: false });
+  const response = await worker.fetch(makeRequest("/market-data/status", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 503);
+});
+
+test("market analysis remains disabled even when the read-only event store is bound", async () => {
+  const state = makeEnv();
+  const response = await worker.fetch(makeRequest("/analyze", {}, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 503);
 });
 
 test("malformed legacy strategy is never reported as ready", async () => {
