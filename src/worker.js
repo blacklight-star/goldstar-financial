@@ -234,10 +234,11 @@ export default {
       if (path === "/strategy/synthesize" && method === "POST") {
         var k3 = await getRules(env);
         if (!k3.all.length) return err("No approved rules; legacy records are excluded from synthesis", 409);
-        var sourceRules = JSON.stringify(k3.all);
+        var strategyRules = k3.all.slice(0, 10);
+        var sourceRules = JSON.stringify(strategyRules);
         var sourceRulesHash = await sha256Hex(sourceRules);
-        var sourceRuleIds = k3.all.map(function(rule) { return String(rule.id); });
-        var prompt = "You are a trading research assistant. Produce a research candidate only; do not describe it as backtested, validated, approved, or executable. Combine these approved rules and state assumptions, conflicts, invalidation conditions, and missing data. Rules:\n" + JSON.stringify(k3.all.slice(0, 10));
+        var sourceRuleIds = strategyRules.map(function(rule) { return String(rule.id); });
+        var prompt = "You are a trading research assistant. Produce a research candidate only; do not describe it as backtested, validated, approved, or executable. Combine these approved rules and state assumptions, conflicts, invalidation conditions, and missing data. Rules:\n" + JSON.stringify(strategyRules);
         var strategy = await ai(env, prompt);
         if (!strategy) return err("AI empty response", 502);
         var candidate = {
@@ -245,7 +246,7 @@ export default {
           status: "candidate",
           strategy: strategy,
           generatedAt: new Date().toISOString(),
-          ruleCount: k3.all.length,
+          ruleCount: strategyRules.length,
           sourceRuleIds: sourceRuleIds,
           sourceRulesHash: sourceRulesHash
         };
