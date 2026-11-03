@@ -1,0 +1,41 @@
+{
+  "snapshot": "GOLDSTAR Financial L2 deployed baseline",
+  "capturedAt": "2026-11-03",
+  "repository": "blacklight-star/goldstar-financial",
+  "branch": "baseline/deployed-2026-11-03",
+  "sourcePath": "backups/deployed/goldstar-financial-v3.worker.js",
+  "sourceCommit": "ef5d914a797ff9c50b356ca737cf24e3561599cd",
+  "cloudflareWorker": "goldstar-financial-v3",
+  "workerUrl": "https://goldstar-financial-v3.goldstar-nsl83.workers.dev",
+  "compatibilityDate": "2026-10-28",
+  "modifiedOn": "2026-11-01T20:28:45.509668Z",
+  "etag": "6b7a1905037d108436d53ca7a30dc41b4f09e3929ef9268bb4027865e1e859e4",
+  "bindings": [
+    {
+      "name": "AI",
+      "type": "ai"
+    },
+    {
+      "name": "BROWSER",
+      "type": "browser"
+    },
+    {
+      "name": "KNOWLEDGE",
+      "type": "kv_namespace"
+    },
+    {
+      "name": "STRATEGY",
+      "type": "kv_namespace"
+    },
+    {
+      "name": "DB",
+      "type": "d1"
+    }
+  ],
+  "secretNames": [
+    "API_KEY",
+    "L1_BRIDGE_KEY"
+  ],
+  "secretValuesIncluded": false,
+  "note": "Snapshot is additive and isolated on a non-default branch. Production Worker and secrets were not modified."
+}
