@@ -21,7 +21,7 @@ function makeKv(initial = {}) {
   };
 }
 
-function makeDb() {
+function makeDb(options = {}) {
   const rows = new Map();
   const events = [];
   const queries = [];
@@ -75,13 +75,13 @@ function makeDb() {
   };
 }
 
-function makeEnv({ pending = [], active = [], strategy = null, withDb = true } = {}) {
+function makeEnv({ pending = [], active = [], strategy = null, withDb = true, dbOptions = {} } = {}) {
   const KNOWLEDGE = makeKv({
     knowledge_NDS_pending: pending,
     knowledge_NDS: active
   });
   const STRATEGY = makeKv(strategy === null ? {} : { current_strategy: strategy });
-  const DB = withDb ? makeDb() : undefined;
+  const DB = withDb ? makeDb(dbOptions) : undefined;
   return {
     env: {
       API_KEY: "general-api-key",
@@ -207,6 +207,65 @@ test("verified owner approval writes approved rules and a D1 audit record", asyn
   assert.equal(audit.event_type, "NDS_RULE_APPROVAL");
   assert.equal(audit.outcome, "approved");
   assert.equal(audit.actor_agent_id, "OWNER");
+});
+
+test("invalid excerpt hash and non-allowlisted source URL are rejected", async () => {
+  const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
+  for (const override of [
+    { sourceExcerptHash: "0".repeat(64) },
+    { sourcePostUrl: "https://evil.example/s/NDS4ALLVIDEOS/123" }
+  ]) {
+    const rule = evidenceRule(override);
+    const state = makeEnv({ pending: [rule] });
+    const response = await worker.fetch(makeRequest("/training/approve", {
+      confirmation: "APPROVE",
+      ids: [rule.id],
+      approvalNote: "Owner review"
+    }, headers), state.env, ctx);
+    assert.equal(response.status, 409);
+    assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
+  }
+});
+
+test("already active rule IDs cannot be re-approved", async () => {
+  const rule = evidenceRule();
+  const active = [{ ...rule, validationStatus: "approved" }];
+  const state = makeEnv({ pending: [rule], active });
+  const response = await worker.fetch(makeRequest("/training/approve", {
+    confirmation: "APPROVE",
+    ids: [rule.id],
+    approvalNote: "Owner review"
+  }, { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
+  assert.equal(response.status, 409);
+  assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 1);
+});
+
+test("audit insert failure leaves pending and active knowledge unchanged", async () => {
+  const rule = evidenceRule();
+  const state = makeEnv({ pending: [rule], dbOptions: { failInsert: true } });
+  const response = await worker.fetch(makeRequest("/training/approve", {
+    confirmation: "APPROVE",
+    ids: [rule.id],
+    approvalNote: "Owner review"
+  }, { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
+  assert.equal(response.status, 503);
+  assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
+  assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
+});
+
+test("audit update failure is surfaced as pending reconciliation", async () => {
+  const rule = evidenceRule();
+  const state = makeEnv({ pending: [rule], dbOptions: { failUpdate: true } });
+  const response = await worker.fetch(makeRequest("/training/approve", {
+    confirmation: "APPROVE",
+    ids: [rule.id],
+    approvalNote: "Owner review"
+  }, { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
+  assert.equal(response.status, 503);
+  const result = await response.json();
+  assert.equal(result.auditStatus, "pending_reconciliation");
+  assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 1);
+  assert.equal([...state.DB.rows.values()][0].outcome, "requested");
 });
 
 test("approval fails closed when the audit D1 binding is absent", async () => {
