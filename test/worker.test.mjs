@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import worker from "../src/worker.js";
 
-function makeKv(initial = {}) {
+function makeKv(initial = {}, options = {}) {
   const values = new Map(Object.entries(initial).map(([key, value]) => [
     key,
     typeof value === "string" ? value : JSON.stringify(value)
@@ -16,6 +16,7 @@ function makeKv(initial = {}) {
       return options.type === "json" ? JSON.parse(value) : value;
     },
     async put(key, value) {
+      if ((options.failPutKeys || []).includes(key)) throw new Error("simulated KV write failure");
       values.set(key, String(value));
     }
   };
@@ -80,11 +81,11 @@ function makeDb(options = {}) {
   };
 }
 
-function makeEnv({ pending = [], active = [], strategy = null, withDb = true, dbOptions = {} } = {}) {
+function makeEnv({ pending = [], active = [], strategy = null, withDb = true, dbOptions = {}, kvOptions = {} } = {}) {
   const KNOWLEDGE = makeKv({
     knowledge_NDS_pending: pending,
     knowledge_NDS: active
-  });
+  }, kvOptions);
   const STRATEGY = makeKv(strategy === null ? {} : { current_strategy: strategy });
   const DB = withDb ? makeDb(dbOptions) : undefined;
   return {
@@ -322,6 +323,18 @@ test("audit insert failure leaves pending and active knowledge unchanged", async
   assert.equal(response.status, 503);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
+});
+
+test("partial KV approval failure rolls back active rules and retains a failed audit", async () => {
+  const rule = evidenceRule();
+  const state = makeEnv({ pending: [rule], kvOptions: { failPutKeys: ["knowledge_NDS_pending"] } });
+  const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 503);
+  assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
+  assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
+  assert.equal([...state.DB.rows.values()][0].outcome, "failed");
 });
 
 test("audit update failure is surfaced as pending reconciliation", async () => {
