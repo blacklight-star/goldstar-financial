@@ -30,45 +30,47 @@ function makeDb() {
     events,
     queries,
     prepare(sql) {
-      return {
-        bind(...args) {
+      let args = [];
+      const statement = {
+        bind(...boundArgs) {
+          args = boundArgs;
           queries.push({ sql, args });
-          return {
-            async run() {
-              if (sql.startsWith("INSERT INTO gs_audit_log")) {
-                rows.set(args[0], {
-                  event_id: args[0],
-                  actor_agent_id: args[1],
-                  event_type: args[2],
-                  resource_type: args[3],
-                  resource_id: args[4],
-                  outcome: args[5],
-                  details_json: args[6]
-                });
-              } else if (sql.startsWith("UPDATE gs_audit_log")) {
-                const row = rows.get(args[2]);
-                if (row) {
-                  row.outcome = args[0];
-                  row.details_json = args[1];
-                }
-              }
-              return { success: true, meta: { changes: 1 } };
-            },
-            async first() {
-              if (sql.includes("FROM tv_events")) {
-                return { event_count: events.length, last_received_at: events[0]?.received_at || null };
-              }
-              if (sql.includes("FROM gs_market_events")) {
-                return { event_count: 0, last_received_at: null };
-              }
-              return null;
-            },
-            async all() {
-              return { results: events.slice(0, Number(args[4] || 100)) };
+          return statement;
+        },
+        async run() {
+          if (sql.startsWith("INSERT INTO gs_audit_log")) {
+            rows.set(args[0], {
+              event_id: args[0],
+              actor_agent_id: args[1],
+              event_type: args[2],
+              resource_type: args[3],
+              resource_id: args[4],
+              outcome: args[5],
+              details_json: args[6]
+            });
+          } else if (sql.startsWith("UPDATE gs_audit_log")) {
+            const row = rows.get(args[2]);
+            if (row) {
+              row.outcome = args[0];
+              row.details_json = args[1];
             }
-          };
+          }
+          return { success: true, meta: { changes: 1 } };
+        },
+        async first() {
+          if (sql.includes("FROM tv_events")) {
+            return { event_count: events.length, last_received_at: events[0]?.received_at || null };
+          }
+          if (sql.includes("FROM gs_market_events")) {
+            return { event_count: 0, last_received_at: null };
+          }
+          return null;
+        },
+        async all() {
+          return { results: events.slice(0, Number(args[4] || 100)) };
         }
       };
+      return statement;
     }
   };
 }
