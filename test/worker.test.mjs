@@ -39,6 +39,7 @@ function makeDb(options = {}) {
         },
         async run() {
           if (sql.startsWith("INSERT INTO gs_audit_log")) {
+            if (options.failInsert) throw new Error("simulated audit insert failure");
             rows.set(args[0], {
               event_id: args[0],
               actor_agent_id: args[1],
@@ -49,6 +50,7 @@ function makeDb(options = {}) {
               details_json: args[6]
             });
           } else if (sql.startsWith("UPDATE gs_audit_log")) {
+            if (options.failUpdate) throw new Error("simulated audit update failure");
             const row = rows.get(args[2]);
             if (row) {
               row.outcome = args[0];
