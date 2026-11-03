@@ -117,6 +117,29 @@ async function sha256Hex(value) {
   }).join("");
 }
 
+async function hasVerifiedRuleEvidence(rule) {
+  if (!rule || typeof rule !== "object" ||
+      rule.validationStatus !== "pending" ||
+      rule.contentType !== "trading_rule" ||
+      rule.sourceExcerptVerified !== true) return false;
+  var sourcePostId = String(rule.sourcePostId || "").trim();
+  var sourcePostUrl = String(rule.sourcePostUrl || "").trim();
+  var excerpt = String(rule.sourceExcerpt || "").trim();
+  var expectedHash = String(rule.sourceExcerptHash || "").trim().toLowerCase();
+  if (!sourcePostId || excerpt.length < 40 || excerpt.length > 2000 ||
+      !/^[a-f0-9]{64}$/.test(expectedHash)) return false;
+  try {
+    var sourceUrl = new URL(sourcePostUrl);
+    if (sourceUrl.protocol !== "https:" || sourceUrl.hostname !== "t.me") return false;
+    var match = sourceUrl.pathname.match(/^\\/s\\/([A-Za-z0-9_]+)\\/(\\d+)$/);
+    if (!match || match[2] !== sourcePostId) return false;
+    if (!NDS_CHANNELS.some(function(channel) { return channel.name === match[1]; })) return false;
+  } catch (_) {
+    return false;
+  }
+  return (await sha256Hex(excerpt)) === expectedHash;
+}
+
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -139,7 +162,7 @@ export default {
       if (path === "/") return ok({
         name: "Goldstar L2", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED, analysisMode: "disabled_until_verified_market_data",
         styles: ["ICT", "RTM", "NDS"],
-        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/training/batch","/strategy/synthesize","/analyze"]
+        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/analyze"]
       });
 
       if (path === "/status") {
@@ -191,22 +214,62 @@ export default {
         var selected = pending.filter(function(rule) { return ids.indexOf(String(rule.id)) >= 0; });
         var missing = ids.filter(function(id) { return !selected.some(function(rule) { return String(rule.id) === id; }); });
         if (missing.length) return err("Some IDs are not pending: " + missing.join(", "), 404);
-        var unsupported = selected.filter(function(rule) { return rule.validationStatus !== "pending" || !rule.source || !rule.sourceExcerpt; });
-        if (unsupported.length) return err("Selected rules lack pending status or source evidence; no changes made", 409);
+        var unsupported = [];
+        for (var ui = 0; ui < selected.length; ui++) {
+          if (!(await hasVerifiedRuleEvidence(selected[ui]))) unsupported.push(selected[ui]);
+        }
+        if (unsupported.length) return err("Selected rules lack verified, rule-specific source evidence; no changes made", 409);
         var activeIds = new Set(active.map(function(rule) { return String(rule.id); }));
+        var alreadyActive = selected.filter(function(rule) { return activeIds.has(String(rule.id)); });
+        if (alreadyActive.length) return err("One or more selected IDs are already active; no changes made", 409);
+        var approvalNote = String(approvalBody.approvalNote || "").trim().slice(0, 500);
+        if (!approvalNote) return err("A non-empty approval note is required", 400);
+        if (!env.DB || typeof env.DB.prepare !== "function") return err("Audit database binding unavailable; approval is disabled", 503);
         var now = new Date().toISOString();
-        var promoted = selected.filter(function(rule) { return !activeIds.has(String(rule.id)); }).map(function(rule) {
+        var promoted = selected.map(function(rule) {
           return Object.assign({}, rule, {
             validationStatus: "approved",
             approvedAt: now,
-            approvedBy: "goldstar-level0-via-level1",
-            approvalNote: String(approvalBody.approvalNote || "Manual approval through Goldstar Level 1").slice(0, 500)
+            approvedBy: "OWNER_L0_VIA_L1",
+            approvalNote: approvalNote
           });
         });
         var remaining = pending.filter(function(rule) { return ids.indexOf(String(rule.id)) < 0; });
-        if (promoted.length) await env.KNOWLEDGE.put("knowledge_NDS", JSON.stringify(active.concat(promoted)));
-        await env.KNOWLEDGE.put("knowledge_NDS_pending", JSON.stringify(remaining));
-        return ok({ success: true, approved: promoted.length, approvedIds: ids, pendingRemaining: remaining.length, approvedTotal: active.filter(function(rule) { return rule.validationStatus === "approved"; }).length + promoted.length });
+        var auditId = crypto.randomUUID();
+        var auditDetails = {
+          actor: "OWNER_L0_VIA_L1",
+          channel: "L1_Telegram",
+          approvalNote: approvalNote,
+          ruleIds: ids,
+          sourceEvidence: selected.map(function(rule) {
+            return { id: String(rule.id), sourcePostUrl: rule.sourcePostUrl, sourceExcerptHash: rule.sourceExcerptHash };
+          }),
+          requestedAt: now
+        };
+        try {
+          await env.DB.prepare("INSERT INTO gs_audit_log (event_id, actor_agent_id, event_type, resource_type, resource_id, outcome, details_json) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .bind(auditId, "OWNER", "NDS_RULE_APPROVAL", "knowledge_NDS", ids.join(","), "requested", JSON.stringify(auditDetails)).run();
+        } catch (_) {
+          return err("Approval audit could not be recorded; no knowledge changes made", 503);
+        }
+        try {
+          await env.KNOWLEDGE.put("knowledge_NDS", JSON.stringify(active.concat(promoted)));
+          await env.KNOWLEDGE.put("knowledge_NDS_pending", JSON.stringify(remaining));
+        } catch (_) {
+          try {
+            await env.KNOWLEDGE.put("knowledge_NDS", JSON.stringify(active));
+            await env.DB.prepare("UPDATE gs_audit_log SET outcome = ?, details_json = ? WHERE event_id = ?")
+              .bind("failed", JSON.stringify(Object.assign({}, auditDetails, { failure: "KV write failed; rollback attempted" })), auditId).run();
+          } catch (_) {}
+          return err("Approval storage failed; rollback was attempted and the audit record was retained", 503);
+        }
+        try {
+          await env.DB.prepare("UPDATE gs_audit_log SET outcome = ?, details_json = ? WHERE event_id = ?")
+            .bind("approved", JSON.stringify(Object.assign({}, auditDetails, { approvedAt: new Date().toISOString() })), auditId).run();
+        } catch (_) {
+          return ok({ success: false, approved: promoted.length, approvedIds: ids, auditStatus: "pending_reconciliation", auditId: auditId, message: "Knowledge was updated but final audit confirmation failed; reconcile before further approvals." }, 503);
+        }
+        return ok({ success: true, approved: promoted.length, approvedIds: ids, pendingRemaining: remaining.length, auditId: auditId, approvedTotal: active.filter(function(rule) { return rule.validationStatus === "approved"; }).length + promoted.length });
       }
 
       if (path === "/training/sources") return ok({ NDS: NDS_CHANNELS });
@@ -270,6 +333,8 @@ export default {
         }
         return err("Market analysis handler is not configured.", 503);
       }
+
+      if (path === "/training/batch" && method === "POST") return err("NDS ingestion is owned by goldstar-trainer; this duplicate writer is disabled", 409);
 
       if (path === "/training/batch" && method === "POST") {
         if (!env.BROWSER) return err("BROWSER binding not active", 503);
