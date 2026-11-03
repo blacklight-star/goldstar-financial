@@ -92,16 +92,22 @@ function parseStrategyRecord(raw) {
   }
 }
 
-function isApprovedStrategy(raw) {
+async function isApprovedStrategy(raw, approvedRules) {
   var record = parseStrategyRecord(raw);
-  return !!(record &&
+  if (!(record &&
     record.status === "approved" &&
     typeof record.sourceRulesHash === "string" &&
     record.sourceRulesHash.length === 64 &&
     Array.isArray(record.sourceRuleIds) &&
     record.sourceRuleIds.length > 0 &&
     !!record.approvedAt &&
-    !!record.approvedBy);
+    !!record.approvedBy)) return false;
+  var ids = record.sourceRuleIds.map(function(id) { return String(id); });
+  if (new Set(ids).size !== ids.length) return false;
+  var byId = new Map((approvedRules || []).map(function(rule) { return [String(rule.id), rule]; }));
+  var sourceRules = ids.map(function(id) { return byId.get(id); });
+  if (sourceRules.some(function(rule) { return !rule; })) return false;
+  return (await sha256Hex(JSON.stringify(sourceRules))) === record.sourceRulesHash;
 }
 
 async function sha256Hex(value) {
@@ -140,7 +146,7 @@ export default {
         var k = await getRules(env);
         var strat = await env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL }).catch(function() { return null; });
         var strategyRecord = parseStrategyRecord(strat);
-        var strategyReady = isApprovedStrategy(strat);
+        var strategyReady = await isApprovedStrategy(strat, k.all);
         var strategyStatus = strategyReady ? "approved" : (strategyRecord ? (strategyRecord.status || "unapproved") : (strat ? "legacy_unverified" : "not_created"));
         return ok({ totalRules: k.all.length, approvedRules: k.all.length, legacyRules: k.legacyTotal, legacy: k.legacy, strategyReady: strategyReady, strategyStatus: strategyStatus, analysisEnabled: MARKET_ANALYSIS_ENABLED, ict: k.ict.length, rtm: k.rtm.length, nds: k.nds.length });
       }
@@ -220,7 +226,8 @@ export default {
         if (!rawStrategy) return ok({ status: "not_created", approved: false, strategy: null, lastUpdated: sArr[1] });
         var strategyRecord = parseStrategyRecord(rawStrategy);
         if (!strategyRecord) return ok({ status: "legacy_unverified", approved: false, strategy: null, legacyBytes: String(rawStrategy).length, lastUpdated: sArr[1] });
-        var strategyApproved = isApprovedStrategy(rawStrategy);
+        var strategyRulesState = await getRules(env);
+        var strategyApproved = await isApprovedStrategy(rawStrategy, strategyRulesState.all);
         return ok({
           status: strategyApproved ? "approved" : (strategyRecord.status || "candidate"),
           approved: strategyApproved,
@@ -254,7 +261,7 @@ export default {
           env.STRATEGY.put("current_strategy", JSON.stringify(candidate)),
           env.STRATEGY.put("strategy_updated", candidate.generatedAt)
         ]));
-        return ok({ success: true, status: "candidate_unvalidated", approved: false, strategyLength: strategy.length, ruleCount: k3.all.length, sourceRulesHash: sourceRulesHash, strategy: strategy });
+        return ok({ success: true, status: "candidate_unvalidated", approved: false, strategyLength: strategy.length, ruleCount: strategyRules.length, totalApprovedRules: k3.all.length, sourceRulesHash: sourceRulesHash, strategy: strategy });
       }
 
       if (path === "/analyze" && method === "POST") {
