@@ -232,6 +232,23 @@ test("verified owner approval writes approved rules and a D1 audit record", asyn
   assert.equal(audit.actor_agent_id, "OWNER:71007767");
 });
 
+test("approval request ID is single-use across rule sets", async () => {
+  const firstRule = evidenceRule({ id: "rule-first" });
+  const secondRule = evidenceRule({ id: "rule-second" });
+  const requestId = randomUUID();
+  const state = makeEnv({ pending: [firstRule, secondRule] });
+  const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
+
+  const firstBody = makeApprovalBody([firstRule.id], [firstRule], { requestId });
+  const firstResponse = await worker.fetch(makeRequest("/training/approve", firstBody, headers), state.env, ctx);
+  assert.equal(firstResponse.status, 200);
+
+  const secondBody = makeApprovalBody([secondRule.id], [secondRule], { requestId });
+  const secondResponse = await worker.fetch(makeRequest("/training/approve", secondBody, headers), state.env, ctx);
+  assert.equal(secondResponse.status, 409);
+  assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
+});
+
 test("invalid excerpt hash and non-allowlisted source URL are rejected", async () => {
   const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
   for (const override of [
