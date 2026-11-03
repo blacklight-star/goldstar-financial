@@ -82,6 +82,35 @@ async function getRules(env) {
   return { ict: ai, rtm: ar, nds: an, all: ai.concat(ar, an), legacy: legacy, legacyTotal: legacy.ict + legacy.rtm + legacy.nds };
 }
 
+function parseStrategyRecord(raw) {
+  if (typeof raw !== "string" || !raw) return null;
+  try {
+    var parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function isApprovedStrategy(raw) {
+  var record = parseStrategyRecord(raw);
+  return !!(record &&
+    record.status === "approved" &&
+    typeof record.sourceRulesHash === "string" &&
+    record.sourceRulesHash.length === 64 &&
+    Array.isArray(record.sourceRuleIds) &&
+    record.sourceRuleIds.length > 0 &&
+    !!record.approvedAt &&
+    !!record.approvedBy);
+}
+
+async function sha256Hex(value) {
+  var digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), function(byte) {
+    return byte.toString(16).padStart(2, "0");
+  }).join("");
+}
+
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -110,7 +139,10 @@ export default {
       if (path === "/status") {
         var k = await getRules(env);
         var strat = await env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL }).catch(function() { return null; });
-        return ok({ totalRules: k.all.length, approvedRules: k.all.length, legacyRules: k.legacyTotal, legacy: k.legacy, strategyReady: !!strat, analysisEnabled: MARKET_ANALYSIS_ENABLED, ict: k.ict.length, rtm: k.rtm.length, nds: k.nds.length });
+        var strategyRecord = parseStrategyRecord(strat);
+        var strategyReady = isApprovedStrategy(strat);
+        var strategyStatus = strategyReady ? "approved" : (strategyRecord ? (strategyRecord.status || "unapproved") : (strat ? "legacy_unverified" : "not_created"));
+        return ok({ totalRules: k.all.length, approvedRules: k.all.length, legacyRules: k.legacyTotal, legacy: k.legacy, strategyReady: strategyReady, strategyStatus: strategyStatus, analysisEnabled: MARKET_ANALYSIS_ENABLED, ict: k.ict.length, rtm: k.rtm.length, nds: k.nds.length });
       }
 
       if (path === "/training/load-prebuilt" && method === "POST") {
@@ -184,20 +216,44 @@ export default {
           env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL }).catch(function() { return null; }),
           env.STRATEGY.get("strategy_updated", { cacheTtl: KV_CACHE_TTL }).catch(function() { return null; }),
         ]);
-        return ok({ strategy: sArr[0] || "not created", lastUpdated: sArr[1] });
+        var rawStrategy = sArr[0];
+        if (!rawStrategy) return ok({ status: "not_created", approved: false, strategy: null, lastUpdated: sArr[1] });
+        var strategyRecord = parseStrategyRecord(rawStrategy);
+        if (!strategyRecord) return ok({ status: "legacy_unverified", approved: false, strategy: null, legacyBytes: String(rawStrategy).length, lastUpdated: sArr[1] });
+        var strategyApproved = isApprovedStrategy(rawStrategy);
+        return ok({
+          status: strategyApproved ? "approved" : (strategyRecord.status || "candidate"),
+          approved: strategyApproved,
+          strategy: strategyRecord.strategy || null,
+          ruleCount: strategyRecord.ruleCount || 0,
+          sourceRuleIds: strategyRecord.sourceRuleIds || [],
+          lastUpdated: sArr[1]
+        });
       }
 
       if (path === "/strategy/synthesize" && method === "POST") {
         var k3 = await getRules(env);
-        if (!k3.all.length) return err("Load rules first");
-        var prompt = "You are a trading strategist. Combine these rules into a strategy. Rules:\n" + JSON.stringify(k3.all.slice(0, 10));
+        if (!k3.all.length) return err("No approved rules; legacy records are excluded from synthesis", 409);
+        var sourceRules = JSON.stringify(k3.all);
+        var sourceRulesHash = await sha256Hex(sourceRules);
+        var sourceRuleIds = k3.all.map(function(rule) { return String(rule.id); });
+        var prompt = "You are a trading research assistant. Produce a research candidate only; do not describe it as backtested, validated, approved, or executable. Combine these approved rules and state assumptions, conflicts, invalidation conditions, and missing data. Rules:\n" + JSON.stringify(k3.all.slice(0, 10));
         var strategy = await ai(env, prompt);
         if (!strategy) return err("AI empty response", 502);
+        var candidate = {
+          schemaVersion: 1,
+          status: "candidate",
+          strategy: strategy,
+          generatedAt: new Date().toISOString(),
+          ruleCount: k3.all.length,
+          sourceRuleIds: sourceRuleIds,
+          sourceRulesHash: sourceRulesHash
+        };
         ctx.waitUntil(Promise.all([
-          env.STRATEGY.put("current_strategy", strategy),
-          env.STRATEGY.put("strategy_updated", new Date().toISOString())
+          env.STRATEGY.put("current_strategy", JSON.stringify(candidate)),
+          env.STRATEGY.put("strategy_updated", candidate.generatedAt)
         ]));
-        return ok({ success: true, strategyLength: strategy.length, strategy: strategy });
+        return ok({ success: true, status: "candidate_unvalidated", approved: false, strategyLength: strategy.length, ruleCount: k3.all.length, sourceRulesHash: sourceRulesHash, strategy: strategy });
       }
 
       if (path === "/analyze" && method === "POST") {
