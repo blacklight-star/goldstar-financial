@@ -1,4 +1,4 @@
-name = "goldstar-financial-v3"
+name = "goldstar-financial-v3-staging"
 main = "src/worker.js"
 compatibility_date = "2026-11-06"
 migrations_dir = "migrations"
