@@ -168,6 +168,36 @@ function constantTimeEqual(left, right) {
   return difference === 0;
 }
 
+const KNOWLEDGE_WRITE_LOCK_NAME = "knowledge-write";
+const KNOWLEDGE_WRITE_LOCK_LEASE_MS = 10 * 60 * 1000;
+
+async function withKnowledgeWriteLock(env, operation) {
+  if (!env.DB || typeof env.DB.prepare !== "function") return err("Knowledge write lock D1 binding is unavailable", 503);
+  const ownerToken = crypto.randomUUID();
+  const now = Date.now();
+  let acquired;
+  try {
+    acquired = await env.DB.prepare(
+      "INSERT INTO gs_worker_locks (lock_name, owner_token, lease_until_ms, updated_at) VALUES (?, ?, ?, ?) " +
+      "ON CONFLICT(lock_name) DO UPDATE SET owner_token = excluded.owner_token, lease_until_ms = excluded.lease_until_ms, updated_at = excluded.updated_at " +
+      "WHERE gs_worker_locks.lease_until_ms <= ? RETURNING owner_token"
+    ).bind(KNOWLEDGE_WRITE_LOCK_NAME, ownerToken, now + KNOWLEDGE_WRITE_LOCK_LEASE_MS, new Date(now).toISOString(), now).first();
+  } catch (error) {
+    return err("Knowledge write lock unavailable; operation failed closed", 503);
+  }
+  if (!acquired || acquired.owner_token !== ownerToken) return err("Knowledge store is busy; retry shortly", 409);
+  try {
+    return await operation();
+  } finally {
+    try {
+      await env.DB.prepare("DELETE FROM gs_worker_locks WHERE lock_name = ? AND owner_token = ?")
+        .bind(KNOWLEDGE_WRITE_LOCK_NAME, ownerToken).run();
+    } catch (error) {
+      // The lease expires automatically if a release fails.
+    }
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -230,6 +260,7 @@ export default {
       if (path === "/training/approve" && method === "POST" && !validBridge) return err("L1 bridge authorization required", 403);
 
       if (path === "/training/approve" && method === "POST") {
+        return await withKnowledgeWriteLock(env, async () => {
         var approvalBody;
         try { approvalBody = await body(request); } catch (e) { return err("Invalid approval payload", 400); }
         if (approvalBody.confirmation !== "APPROVE") return err("Explicit APPROVE confirmation is required", 400);
@@ -348,6 +379,8 @@ export default {
           return ok({ success: false, approved: promoted.length, approvedIds: ids, auditStatus: "pending_reconciliation", auditId: auditId, message: "Knowledge was updated but final audit confirmation failed; reconcile before further approvals." }, 503);
         }
         return ok({ success: true, approved: promoted.length, approvedIds: ids, pendingRemaining: remaining.length, auditId: auditId, approvedTotal: active.filter(function(rule) { return rule.validationStatus === "approved"; }).length + promoted.length });
+      
+        });
       }
 
       if (path === "/training/sources") return ok({ NDS: NDS_CHANNELS });
