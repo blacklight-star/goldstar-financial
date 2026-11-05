@@ -56,8 +56,30 @@ function extractJSON(t) {
   }
   return null;
 }
+const AI_DAILY_BUDGET_NEURONS = 3000;
+const AI_INPUT_NEURONS_PER_MILLION = 5500;
+const AI_OUTPUT_NEURONS_PER_MILLION = 36400;
+
+async function reserveAiBudget(env, prompt, maxTokens) {
+  if (!env.DB || typeof env.DB.prepare !== "function") throw new Error("AI budget D1 binding unavailable; inference blocked");
+  const now = new Date();
+  const day = now.toISOString().slice(0, 10);
+  const inputTokens = Math.ceil(String(prompt || "").length / 2);
+  const estimatedNeurons = Math.max(1, Math.ceil(
+    ((inputTokens * AI_INPUT_NEURONS_PER_MILLION) + (maxTokens * AI_OUTPUT_NEURONS_PER_MILLION)) / 1000000 * 1.5
+  ));
+  const reserved = await env.DB.prepare(
+    "INSERT INTO gs_ai_daily_budget (day_utc, reserved_neurons, updated_at) VALUES (?, ?, ?) " +
+    "ON CONFLICT(day_utc) DO UPDATE SET reserved_neurons = gs_ai_daily_budget.reserved_neurons + excluded.reserved_neurons, updated_at = excluded.updated_at " +
+    "WHERE gs_ai_daily_budget.reserved_neurons + excluded.reserved_neurons <= ? RETURNING reserved_neurons"
+  ).bind(day, estimatedNeurons, now.toISOString(), AI_DAILY_BUDGET_NEURONS).first();
+  if (!reserved) throw new Error("AI daily safety budget reached; inference skipped to prevent overage");
+  return reserved.reserved_neurons;
+}
+
 async function ai(env, prompt) {
   try {
+    await reserveAiBudget(env, prompt, 1024);
     var r = await env.AI.run(AI_MODEL, { prompt: prompt, max_tokens: 1024 });
     if (r && r.response) return r.response;
     if (r && r.choices && r.choices[0] && r.choices[0].text) return r.choices[0].text;
@@ -67,6 +89,7 @@ async function ai(env, prompt) {
     throw new Error("AI error: " + String(e.message || e));
   }
 }
+
 async function getRules(env) {
   var results = await Promise.all([
     env.KNOWLEDGE.get("knowledge_ICT", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; }),
