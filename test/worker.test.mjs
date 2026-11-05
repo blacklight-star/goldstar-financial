@@ -527,3 +527,13 @@ test("L2 has one disabled NDS writer and no Browser Run fallback", async () => {
   assert.doesNotMatch(source, /BROWSER/);
   assert.equal(source.split('path === "/training/batch"').length - 1, 1);
 });
+
+test("migrations define the shared lock, AI budget, audit, and market-data tables", async () => {
+  const lockMigration = await readFile(new URL("../migrations/0002_shared_worker_lock.sql", import.meta.url), "utf8");
+  const supportMigration = await readFile(new URL("../migrations/0003_staging_support_tables.sql", import.meta.url), "utf8");
+  assert.match(lockMigration, /gs_worker_locks/);
+  assert.match(lockMigration, /gs_ai_daily_budget/);
+  assert.match(supportMigration, /gs_audit_log/);
+  assert.match(supportMigration, /tv_events/);
+  assert.match(supportMigration, /gs_market_events/);
+});
