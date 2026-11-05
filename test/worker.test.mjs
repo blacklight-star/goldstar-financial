@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import worker from "../src/worker.js";
 
 function makeKv(initial = {}, options = {}) {
@@ -518,4 +519,11 @@ test("strategy synthesis is blocked when the shared daily AI budget is exhausted
 
   assert.notEqual(response.status, 200);
   assert.equal(state.env.AI.calls, 0);
+});
+
+test("L2 has one disabled NDS writer and no Browser Run fallback", async () => {
+  const source = await readFile(new URL("../src/worker.js", import.meta.url), "utf8");
+  assert.match(source, /NDS ingestion is owned by goldstar-trainer; this duplicate writer is disabled/);
+  assert.doesNotMatch(source, /BROWSER/);
+  assert.equal(source.split('path === "/training/batch"').length - 1, 1);
 });
