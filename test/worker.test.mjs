@@ -499,6 +499,25 @@ test("approval fails closed while another knowledge writer holds the shared lock
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
 });
 
+test("missing pending KV key is treated as an empty queue, not a server error", async () => {
+  const state = makeEnv();
+  state.KNOWLEDGE.values.delete("knowledge_NDS_pending");
+  const pendingResponse = await worker.fetch(makeRequest("/training/pending?limit=1", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(pendingResponse.status, 200);
+  const pending = await pendingResponse.json();
+  assert.equal(pending.count, 0);
+  assert.deepEqual(pending.rules, []);
+
+  const progressResponse = await worker.fetch(makeRequest("/training/progress", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(progressResponse.status, 200);
+  const progress = await progressResponse.json();
+  assert.equal(progress.pendingNDS, 0);
+});
+
 test("strategy synthesis reserves the shared daily AI budget before inference", async () => {
   const state = makeEnv({ active: [{ id: "approved-1", validationStatus: "approved", rule: "Wait for a confirmed market-structure shift." }] });
   const response = await worker.fetch(makeRequest("/strategy/synthesize", {}, {
