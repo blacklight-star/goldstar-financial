@@ -518,67 +518,7 @@ export default {
 
       if (path === "/training/batch" && method === "POST") return err("NDS ingestion is owned by goldstar-trainer; this duplicate writer is disabled", 409);
 
-      if (path === "/training/batch" && method === "POST") {
-        if (!env.BROWSER) return err("BROWSER binding not active", 503);
-        var results = [];
-        var activeExisting = (await env.KNOWLEDGE.get("knowledge_NDS", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; })) || [];
-        var existing = (await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; })) || [];
-        if (!Array.isArray(activeExisting) || !Array.isArray(existing)) return err("NDS knowledge store has invalid shape; refusing to overwrite it", 500);
-        var seen = new Set(activeExisting.concat(existing).map(function(r) {
-          return String(r.rule || r.description || r.title || JSON.stringify(r)).trim().toLowerCase().replace(/\s+/g, " ");
-        }));
-        var additions = [];
-        for (var ci = 0; ci < NDS_CHANNELS.length; ci++) {
-          var ch = NDS_CHANNELS[ci];
-          try {
-            var browserResponse = await env.BROWSER.quickAction("content", {
-              url: ch.url,
-              gotoOptions: { waitUntil: "domcontentloaded", timeout: 30000 }
-            });
-            if (!browserResponse || !browserResponse.ok) {
-              var browserError = browserResponse ? await browserResponse.text() : "";
-              throw new Error("Browser Run content failed: HTTP " + (browserResponse ? browserResponse.status : "no response") + " " + browserError.substring(0, 200));
-            }
-            var browserPayload = await browserResponse.json();
-            if (!browserPayload.success || typeof browserPayload.result !== "string") throw new Error("Browser Run returned unsuccessful content");
-            var html = browserPayload.result;
-            var text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "").replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-            if (!text) throw new Error("Source content is empty");
-            var raw2 = await ai(env, "Extract only explicit NDS trading rules from this source. Do not invent rules. Return JSON array [{category,rule,conditions,priority}]. Source: " + text.substring(0, 5000));
-            var parsed = extractJSON(raw2);
-            var rules2 = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.rules) ? parsed.rules : []);
-            var addedForChannel = 0;
-            for (var ri = 0; ri < rules2.length; ri++) {
-              var item = rules2[ri];
-              if (!item || typeof item !== "object") continue;
-              var ruleText = String(item.rule || item.description || item.title || "").trim();
-              if (!ruleText) continue;
-              var fingerprint = ruleText.toLowerCase().replace(/\s+/g, " ");
-              if (seen.has(fingerprint)) continue;
-              seen.add(fingerprint);
-              additions.push(Object.assign({}, item, {
-                id: "nds_" + Date.now() + "_" + additions.length,
-                style: "NDS",
-                source: ch.url,
-                sourceName: ch.name,
-                collectedAt: new Date().toISOString(), validationStatus: "pending", sourceExcerpt: text.slice(-2500)
-              }));
-              addedForChannel++;
-            }
-            results.push({ channel: ch.name, rules: addedForChannel, status: "success" });
-          } catch (e) {
-            results.push({ channel: ch.name, rules: 0, status: "error", error: String(e.message || e) });
-          }
-        }
-        if (additions.length) {
-          await env.KNOWLEDGE.put("knowledge_NDS_pending", JSON.stringify(existing.concat(additions)));
-        }
-        var total = results.reduce(function(s, r) { return s + (r.rules || 0); }, 0);
-        var failed = results.filter(function(r) { return r.status === "error"; }).length;
-        return ok({ success: failed < results.length, channels: results, newRules: total, totalRules: total, existingRules: existing.length, storedTotal: existing.length + additions.length }, failed === results.length ? 502 : 200);
-      }
-
-      return err("Not found: " + path, 404);
+            return err("Not found: " + path, 404);
     } catch (e) {
       return err("Server error: " + String(e.message || e), 500);
     }
