@@ -25,11 +25,13 @@ function makeKv(initial = {}, options = {}) {
 function makeDb(options = {}) {
   const rows = new Map();
   const locks = new Map();
+  const budgets = new Map();
   const events = [];
   const queries = [];
   return {
     rows,
     locks,
+    budgets,
     events,
     queries,
     prepare(sql) {
@@ -66,6 +68,15 @@ function makeDb(options = {}) {
           return { success: true, meta: { changes: 1 } };
         },
         async first() {
+          if (sql.startsWith("INSERT INTO gs_ai_daily_budget")) {
+            const [day, neurons, updatedAt, limit] = args;
+            const current = budgets.get(day) || 0;
+            if (current + neurons <= limit) {
+              budgets.set(day, current + neurons);
+              return { reserved_neurons: current + neurons };
+            }
+            return null;
+          }
           if (sql.startsWith("INSERT INTO gs_worker_locks")) {
             const [lockName, ownerToken, leaseUntilMs, updatedAt, nowMs] = args;
             const existing = locks.get(lockName);
@@ -108,7 +119,14 @@ function makeEnv({ pending = [], active = [], strategy = null, withDb = true, db
       L1_BRIDGE_KEY: "dedicated-l1-bridge-key",
       KNOWLEDGE,
       STRATEGY,
-      DB
+      DB,
+      AI: {
+        calls: 0,
+        async run() {
+          this.calls++;
+          return { response: "Research candidate only; assumptions and invalidation conditions." };
+        }
+      }
     },
     KNOWLEDGE,
     STRATEGY,
@@ -478,4 +496,26 @@ test("approval fails closed while another knowledge writer holds the shared lock
   assert.equal(response.status, 409);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
+});
+
+test("strategy synthesis reserves the shared daily AI budget before inference", async () => {
+  const state = makeEnv({ active: [{ id: "approved-1", validationStatus: "approved", rule: "Wait for a confirmed market-structure shift." }] });
+  const response = await worker.fetch(makeRequest("/strategy/synthesize", {}, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+
+  assert.equal(response.status, 200);
+  assert.equal(state.env.AI.calls, 1);
+  assert.ok([...state.DB.budgets.values()][0] > 0);
+});
+
+test("strategy synthesis is blocked when the shared daily AI budget is exhausted", async () => {
+  const state = makeEnv({ active: [{ id: "approved-1", validationStatus: "approved", rule: "Wait for a confirmed market-structure shift." }] });
+  state.DB.budgets.set(new Date().toISOString().slice(0, 10), 3000);
+  const response = await worker.fetch(makeRequest("/strategy/synthesize", {}, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+
+  assert.notEqual(response.status, 200);
+  assert.equal(state.env.AI.calls, 0);
 });
