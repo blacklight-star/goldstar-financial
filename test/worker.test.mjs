@@ -537,3 +537,9 @@ test("migrations define the shared lock, AI budget, audit, and market-data table
   assert.match(supportMigration, /tv_events/);
   assert.match(supportMigration, /gs_market_events/);
 });
+
+test("staging Wrangler config cannot target Production or enable a Cron", async () => {
+  const config = await readFile(new URL("../wrangler.staging.toml", import.meta.url), "utf8");
+  assert.match(config, /name = "goldstar-financial-v3-staging"/);
+  assert.doesNotMatch(config, /crons\s*=/i);
+});
