@@ -270,11 +270,11 @@ export default {
 
       if (path === "/training/progress") {
         var k2 = await getRules(env);
-        return ok({ ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length, approvedTotal: k2.all.length, legacy: k2.legacy, pendingNDS: (await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" }).catch(function() { return []; }) || []).length });
+        return ok({ ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length, approvedTotal: k2.all.length, legacy: k2.legacy, pendingNDS: ((await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" }).catch(function() { return null; })) || []).length });
       }
 
       if (path === "/training/pending" && method === "GET") {
-        var pendingRules = await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; });
+        var pendingRules = (await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return null; })) || [];
         if (!Array.isArray(pendingRules)) return err("Pending NDS store has invalid shape", 500);
         var limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") || 10)));
         return ok({ status: "pending_review", count: pendingRules.length, returned: Math.min(limit, pendingRules.length), rules: pendingRules.slice(0, limit) });
