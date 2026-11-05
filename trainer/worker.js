@@ -405,3 +405,5 @@ async function runScheduledTraining(env) {
           addedForChannel++;
         }
         for (const post of batch) nextHashMap[String(post.sourcePostId)] = post.contentHas --- TRUNCATED --- 32,150 chars
+
+export { parseTelegramPosts };
