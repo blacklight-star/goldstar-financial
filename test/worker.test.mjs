@@ -24,10 +24,12 @@ function makeKv(initial = {}, options = {}) {
 
 function makeDb(options = {}) {
   const rows = new Map();
+  const locks = new Map();
   const events = [];
   const queries = [];
   return {
     rows,
+    locks,
     events,
     queries,
     prepare(sql) {
@@ -39,7 +41,10 @@ function makeDb(options = {}) {
           return statement;
         },
         async run() {
-          if (sql.startsWith("INSERT INTO gs_audit_log")) {
+          if (sql.startsWith("DELETE FROM gs_worker_locks")) {
+            const row = locks.get(args[0]);
+            if (row && row.owner_token === args[1]) locks.delete(args[0]);
+          } else if (sql.startsWith("INSERT INTO gs_audit_log")) {
             if (options.failInsert) throw new Error("simulated audit insert failure");
             rows.set(args[0], {
               event_id: args[0],
@@ -61,6 +66,15 @@ function makeDb(options = {}) {
           return { success: true, meta: { changes: 1 } };
         },
         async first() {
+          if (sql.startsWith("INSERT INTO gs_worker_locks")) {
+            const [lockName, ownerToken, leaseUntilMs, updatedAt, nowMs] = args;
+            const existing = locks.get(lockName);
+            if (!existing || existing.lease_until_ms <= nowMs) {
+              locks.set(lockName, { lock_name: lockName, owner_token: ownerToken, lease_until_ms: leaseUntilMs, updated_at: updatedAt });
+              return { owner_token: ownerToken };
+            }
+            return null;
+          }
           if (sql.includes("FROM tv_events")) {
             return { event_count: events.length, last_received_at: events[0]?.received_at || null };
           }
@@ -432,4 +446,36 @@ test("malformed legacy strategy is never reported as ready", async () => {
   assert.equal(result.strategyReady, false);
   assert.equal(result.strategyStatus, "legacy_unverified");
   assert.equal(result.approvedRules, 0);
+});
+
+test("approval acquires and releases the shared D1 knowledge lock", async () => {
+  const state = makeEnv();
+  const response = await worker.fetch(makeRequest("/training/approve", {
+    confirmation: "NO",
+    ids: []
+  }, {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+
+  assert.equal(response.status, 400);
+  assert.equal(state.DB.locks.size, 0);
+  assert.ok(state.DB.queries.some(query => query.sql.startsWith("INSERT INTO gs_worker_locks")));
+});
+
+test("approval fails closed while another knowledge writer holds the shared lock", async () => {
+  const rule = evidenceRule();
+  const state = makeEnv({ pending: [rule] });
+  state.DB.locks.set("knowledge-write", {
+    lock_name: "knowledge-write",
+    owner_token: "other-writer",
+    lease_until_ms: Date.now() + 60000,
+    updated_at: new Date().toISOString()
+  });
+  const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+
+  assert.equal(response.status, 409);
+  assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
+  assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
 });
