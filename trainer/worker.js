@@ -376,7 +376,9 @@ async function runScheduledTraining(env) {
         summary.totalChangedPosts += batch.length;
         const batchIds = new Set(batch.map(post => String(post.sourcePostId)));
         let nextDeferred = deferredPosts.filter(item => !batchIds.has(String(item.sourcePostId)));
-        const eligiblePosts = batch.filter(post => isNdsRelevantText(post.text));
+        const eligiblePosts = batch.filter(post => {
+          return isNdsRelevantText(post.text);
+        });
         const eligibleIds = new Set(eligiblePosts.map(post => String(post.sourcePostId)));
         const ineligiblePosts = batch.filter(post => !eligibleIds.has(String(post.sourcePostId)));
         for (const post of ineligiblePosts) {
@@ -432,7 +434,197 @@ async function runScheduledTraining(env) {
             continue;
           }
           const fingerprint = ruleText.toLowerCase().replace(/\s+/g, " ");
-          if (seen.has(fingerprint)) continu
-
---- TRUNCATED ---
-Response was ~8,889 tokens (limit: 6,000). Use more specific queries to reduce response size.
+          if (seen.has(fingerprint)) continue;
+          seen.add(fingerprint);
+          additions.push({
+            ...item,
+            id: "nds_" + crypto.randomUUID(),
+            style: "NDS",
+            contentType: "trading_rule",
+            category,
+            rule: ruleText,
+            conditions,
+            priority: Number.isFinite(Number(item.priority)) ? Math.max(1, Math.min(10, Math.round(Number(item.priority)))) : 5,
+            source: post.sourcePostUrl,
+            sourceName: channel.name,
+            sourcePostIds: [post.sourcePostKey],
+            sourcePostId: post.sourcePostId,
+            sourcePostUrl: post.sourcePostUrl,
+            sourceExcerpt: excerpt,
+            sourceExcerptHash: await sha256Hex(excerpt),
+            sourceExcerptVerified: true,
+            sourcePostContentHash: await sha256Hex(post.text),
+            sourceCaptureMethod: "telegram_public_post_html",
+            collectedAt: new Date().toISOString(),
+            validationStatus: "pending"
+          });
+          addedForChannel++;
+        }
+        for (const post of batch) nextHashMap[String(post.sourcePostId)] = post.contentHash;
+        hashMapWrites.push({ key: hashKey, value: JSON.stringify(nextHashMap) });
+        deferredWrites.push({ key: deferredKey, value: JSON.stringify(nextDeferred) });
+        summary.channels.push({
+          channel: channel.name, status: "reviewed", postCount: page.postIds.length,
+          changedPosts: batch.length, eligiblePosts: eligiblePosts.length, rulesExtracted: rules.length,
+          newRules: addedForChannel, rejectedEvidence: Math.max(0, rules.length - addedForChannel),
+          deferredPosts: ineligiblePosts.length, remainingChangedPosts: Math.max(0, changedPosts.length - batch.length)
+        });
+      } catch (error) {
+        const message = String(error.message || error);
+        summary.channels.push({ channel: channel.name, status: "error", error: message });
+        if (aiCallStarted && /AI daily safety budget reached/i.test(message)) {
+          await env.KNOWLEDGE.put("trainer:ai_budget_backoff", "1", { expirationTtl: secondsUntilUtcReset() });
+          summary.aiBackoff = "local_daily_budget";
+          break;
+        }
+        if (aiCallStarted && isDailyAiQuotaError(message)) {
+          await env.KNOWLEDGE.put("trainer:ai_quota_backoff", "1", { expirationTtl: secondsUntilUtcReset() });
+          summary.aiBackoff = "provider_daily_quota";
+          break;
+        }
+        if (aiCallStarted && isTransientAiError(message)) {
+          await env.KNOWLEDGE.put("trainer:ai_transient_backoff", "1", { expirationTtl: 300 });
+          summary.aiBackoff = "transient_rate_limit";
+          break;
+        }
+      }
+    }
+    if (additions.length) {
+      await env.KNOWLEDGE.put("knowledge_NDS_pending", JSON.stringify(pending.concat(additions)));
+    }
+    for (const item of hashMapWrites) await env.KNOWLEDGE.put(item.key, item.value);
+    for (const item of deferredWrites) await env.KNOWLEDGE.put(item.key, item.value);
+    for (const marker of markers) await env.KNOWLEDGE.put(marker.key, marker.value);
+    summary.newRules = additions.length;
+    summary.pendingRules = pending.length + additions.length;
+    summary.success = !summary.channels.some(channel => channel.status === "error");
+    summary.executionStatus = summary.success ? "completed" : "partial_with_errors";
+    summary.learningSuccess = additions.length > 0;
+    const hasChannelErrors = summary.channels.some(channel => channel.status === "error");
+    summary.learningStatus = additions.length > 0 ? (hasChannelErrors ? "partial_new_rules_added" : "new_rules_added") : hasChannelErrors ? "processing_errors" : summary.totalEligiblePosts > 0 ? "content_reviewed_no_new_rules" : summary.totalChangedPosts > 0 ? "new_posts_deferred_or_filtered" : "no_new_source_content";
+    summary.finishedAt = new Date().toISOString();
+    await env.KNOWLEDGE.put("trainer:last_run", JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    summary.error = String(error.message || error);
+    summary.finishedAt = new Date().toISOString();
+    await env.KNOWLEDGE.put("trainer:last_run", JSON.stringify(summary)).catch(() => {});
+    throw error;
+  } finally {
+    await releaseKnowledgeWriteLock(env, lockOwner).catch(() => {});
+  }
+}
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === "/__preview/parser-selftest" && request.method === "GET" && (url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "staging-v40-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev")) {
+      const sampleHtml = '<div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/125"><div class="tgme_widget_message_text js-message_text">Rule A: price sweeps prior low <div class="tgme_widget_message_link_preview">nested detail</div> and then reclaims it &amp; confirms.</div><div class="tgme_widget_message_caption">Risk must be defined before entry.</div></div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/126"><div class="tgme_widget_message_text js-message_text">Rule B: wait for higher-timeframe confirmation.</div></div></div>';
+      const parsed = parseTelegramPosts(sampleHtml, { name: "NDS4ALLVIDEOS" });
+      const lowerCaseHtml = sampleHtml.replace(/NDS4ALLVIDEOS\//g, "fuzzylogic_nds/");
+      const lowerCaseParsed = parseTelegramPosts(lowerCaseHtml, { name: "FuzzyLogic_NDS" });
+      const markerOne = await channelContentMarker(parsed, "");
+      const markerSame = await channelContentMarker(parsed, "");
+      const editedPosts = parsed.map(function(post, index) { return index === 0 ? Object.assign({}, post, { text: post.text + " edited" }) : post; });
+      const markerEdited = await channelContentMarker(editedPosts, "");
+      const checks = {
+        markerStableForSameContent: markerOne === markerSame,
+        markerChangesOnEdit: markerOne !== markerEdited,
+        twoPosts: parsed.length === 2,
+        firstPostId: parsed[0] && parsed[0].sourcePostId === "125",
+        firstPostUrl: parsed[0] && parsed[0].sourcePostUrl === "https://t.me/s/NDS4ALLVIDEOS/125",
+        nestedContentPreserved: parsed[0] && parsed[0].text.includes("nested detail and then reclaims it & confirms."),
+        captionPreserved: parsed[0] && parsed[0].text.includes("Risk must be defined before entry."),
+        secondPostPreserved: parsed[1] && parsed[1].text.includes("higher-timeframe confirmation"),
+        caseInsensitiveChannelSlug: lowerCaseParsed.length === 2 && lowerCaseParsed[0].sourcePostUrl === "https://t.me/s/FuzzyLogic_NDS/125"
+      };
+      return json({ success: Object.values(checks).every(Boolean), checks, parsed });
+    }
+    if (url.pathname === "/__preview/dry-run" && request.method === "GET" && (url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "staging-v40-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev")) {
+      try {
+        const channelName = url.searchParams.get("channel") || CHANNELS[0].name;
+        return json(await runDryRun(env, channelName, url.searchParams.get("fetchOnly") === "1" || url.searchParams.has("channel")));
+      } catch (error) {
+        return json({ success: false, dryRun: true, persisted: false, error: String(error.message || error) }, 502);
+      }
+    }
+    if (url.pathname === "/__preview/source-diagnostics" && request.method === "GET" &&
+        (url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev" ||
+         url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev")) {
+      const results = await Promise.all(DIAGNOSTIC_CHANNELS.map(async function(channel) {
+        try {
+          const page = await readChannel(env, channel);
+          return {
+            channel: channel.name,
+            sourceRole: channel.diagnosticOnly ? "diagnostic_only" : "configured_source",
+            success: page.hasPosts,
+            retrievalStatus: page.hasPosts ? "posts_extracted" : "no_posts_extracted",
+            postCount: page.posts.length,
+            textLength: page.text.length,
+            linkCount: page.posts.reduce(function(sum, post) { return sum + (post.links || []).length; }, 0),
+            diagnostics: page.diagnostics
+          };
+        } catch (error) {
+          return { channel: channel.name, success: false, retrievalStatus: "fetch_error", error: String(error.message || error).slice(0, 240) };
+        }
+      }));
+      return json({
+        ok: results.every(function(item) { return item.success; }),
+        dryRun: true,
+        persisted: false,
+        aiCalled: false,
+        channels: results
+      });
+    }
+    if (url.pathname === "/health" && request.method === "GET") {
+      return json({
+        ok: true,
+        service: "goldstar-trainer",
+        mode: "scheduled-nds-ingestion",
+        scheduler: "isolated staging Cron every 15 minutes",
+        integrations: ["Direct HTTPS fetch only", "Workers AI with 3,000-neuron daily cap", "Workers KV", "D1 atomic lock"]
+      });
+    }
+    if (url.pathname === "/admin/diagnostics" && request.method === "POST") {
+      const secret = env.GOLDSTAR_BRIDGE_SECRET || "";
+      if (!secret || request.headers.get("authorization") !== "Bearer " + secret) return json({ error: "Unauthorized" }, 401);
+      let knowledge = { ok: false };
+      try {
+        const value = await env.KNOWLEDGE.get("knowledge_NDS");
+        knowledge = { ok: true, keyPresent: value !== null, bytes: value ? new TextEncoder().encode(value).length : 0 };
+      } catch (error) {
+        knowledge = { ok: false, error: String(error.message || error).slice(0, 160) };
+      }
+      return json({
+        ok: true,
+        service: "goldstar-trainer",
+        checks: { auth: true, kv: knowledge, aiBinding: !!env.AI, browserBinding: !!env.BROWSER, scheduledHandler: true },
+        note: "Read-only diagnostics. No training run was started."
+      });
+    }
+    if ((url.pathname === "/admin/status" || url.pathname === "/admin/run-once") && request.method === (url.pathname.endsWith("run-once") ? "POST" : "GET")) {
+      const secret = env.GOLDSTAR_BRIDGE_SECRET || "";
+      if (!secret || request.headers.get("authorization") !== "Bearer " + secret) return json({ error: "Unauthorized" }, 401);
+      if (url.pathname === "/admin/status") {
+        const [lastRun, rawRules, rawPending] = await Promise.all([
+          env.KNOWLEDGE.get("trainer:last_run"),
+          env.KNOWLEDGE.get("knowledge_NDS"),
+          env.KNOWLEDGE.get("knowledge_NDS_pending")
+        ]);
+        let count = 0;
+        let pendingCount = 0;
+        try { count = rawRules ? JSON.parse(rawRules).length : 0; } catch {}
+        try { pendingCount = rawPending ? JSON.parse(rawPending).length : 0; } catch {}
+        return json({ service: "goldstar-trainer", approvedRuleCount: count, pendingRuleCount: pendingCount, lastRun: lastRun ? JSON.parse(lastRun) : null });
+      }
+      try {
+        return json(await runScheduledTraining(env));
+      } catch (error) {
+        return json({ success: false, error: String(error.message || error) }, 502);
+      }
+    }
+    return json({ error: "Not found" }, 404);
+  },
+  async scheduled(event, env) {
+    await runScheduledTraining(env);
+  }
+};
