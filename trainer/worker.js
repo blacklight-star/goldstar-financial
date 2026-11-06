@@ -12,7 +12,27 @@ const DIAGNOSTIC_CHANNELS = [
   { url: "https://t.me/s/NDS_Algorithm", name: "NDS_Algorithm", diagnosticOnly: true }
 ];
 const AI_MODEL = "@cf/zai-org/glm-4.7-flash";
-const NDS_SIGNAL_PATTERN = /liquidity|sweep|stop\s*hunt|order\s*block|fair\s*value\s*gap|\bfvg\b|\bbos\b|\bchoch\b|\bmss\b|displacement|mitigation|entry|stop\s*loss|take\s*profit|market\s*structure|risk|support|resistance|نقدینگی|سوییپ|سوئیپ|اوردر\s*بلاک|ساختار\s*بازار|شکست\s*ساختار|حد\s*ضرر|حد\s*سود|ورود|خروج/i;
+// NDS-specific retrieval gate. This is a prefilter, not rule validation or approval.
+const NDS_EXPLICIT_ANCHOR = /nodal\s+displacement\s+sequencing|\b123\s*[- ]?\s*flag\b|\bhook[\s-]*hook[\s-]*rally\b|\bzero[-\s]*sum(?:\s+game)?\b|\bcycle\s+analysis\b|\bfractal\s+analysis\b|\blow[-\s]+volume\s+spike\b|\bpositive\s+hook\b|\bnegative\s+hook\b|بازی[\s‌-]*مجموع[\s‌-]*صفر|هوک[\s‌-]*هوک[\s‌-]*رالی|123[\s‌-]*فلگ/i;
+const NDS_COMPONENT_PATTERNS = [
+  /\bnodes?\b/i, /\bhooks?\b/i, /\bflags?\b/i, /\blip\b/i,
+  /\brall(?:y|ies)\b/i, /\bdrops?\b/i, /\bsequenc(?:e|ing)\b/i,
+  /\bfractals?\b/i, /\bsymmetry\b/i, /\bSMI\b/i, /\b86[.,]4\s*%?/i,
+  /\b[NS][123]\b/i,
+  /نود|گره/i, /هوک/i, /فلگ|لیپ/i, /رالی/i, /دراپ/i,
+  /سکانس|توالی/i, /فراکتال/i, /تقارن/i, /چرخه|سایکل/i,
+  /اسپایک|۸۶[٫./]۴/i
+];
+export function isNdsRelevantText(value) {
+  const text = String(value || "").normalize("NFKC");
+  if (text.trim().length < 120) return false;
+  if (NDS_EXPLICIT_ANCHOR.test(text)) return true;
+  let matchedComponents = 0;
+  for (const pattern of NDS_COMPONENT_PATTERNS) {
+    if (pattern.test(text)) matchedComponents++;
+  }
+  return matchedComponents >= 3;
+}
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
   headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
@@ -236,7 +256,7 @@ async function runDryRun(env, channelName, fetchOnly) {
     sourcePostId: post.sourcePostId,
     text: post.text.slice(0, 1600)
   }));
-  const eligiblePosts = sourcePosts.filter(post => post.text.trim().length >= 120 && NDS_SIGNAL_PATTERN.test(post.text));
+  const eligiblePosts = sourcePosts.filter(post => isNdsRelevantText(post.text));
   if (!eligiblePosts.length) return {
     success: false, retrievalStatus: page.hasPosts ? "no_eligible_nds_content" : "no_posts_extracted",
     dryRun: true, persisted: false, channel: channel.name,
@@ -356,10 +376,7 @@ async function runScheduledTraining(env) {
         summary.totalChangedPosts += batch.length;
         const batchIds = new Set(batch.map(post => String(post.sourcePostId)));
         let nextDeferred = deferredPosts.filter(item => !batchIds.has(String(item.sourcePostId)));
-        const eligiblePosts = batch.filter(post => {
-          NDS_SIGNAL_PATTERN.lastIndex = 0;
-          return post.text.trim().length >= 120 && NDS_SIGNAL_PATTERN.test(post.text);
-        });
+        const eligiblePosts = batch.filter(post => isNdsRelevantText(post.text));
         const eligibleIds = new Set(eligiblePosts.map(post => String(post.sourcePostId)));
         const ineligiblePosts = batch.filter(post => !eligibleIds.has(String(post.sourcePostId)));
         for (const post of ineligiblePosts) {
