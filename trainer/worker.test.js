@@ -12,6 +12,12 @@ test("rejects generic market vocabulary without NDS-specific structure", () => {
   assert.equal(isNdsRelevantText(long("Market structure, support, resistance, risk, entry, exit and price action are discussed here.")), false);
 });
 
+test("rejects generic cycle/fractal analysis and low-volume spikes as standalone anchors", () => {
+  assert.equal(isNdsRelevantText(long("Cycle analysis describes recurring price behavior in the market.")), false);
+  assert.equal(isNdsRelevantText(long("Fractal analysis studies self-similar patterns in financial time series.")), false);
+  assert.equal(isNdsRelevantText(long("A low-volume spike appears near a resistance level.")), false);
+});
+
 test("rejects short titles even when they contain NDS terminology", () => {
   assert.equal(isNdsRelevantText("NDS 123Flag Hook"), false);
 });
