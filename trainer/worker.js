@@ -13,7 +13,7 @@ const DIAGNOSTIC_CHANNELS = [
 ];
 const AI_MODEL = "@cf/zai-org/glm-4.7-flash";
 // NDS-specific retrieval gate. This is a prefilter, not rule validation or approval.
-const NDS_EXPLICIT_ANCHOR = /nodal\s+displacement\s+sequencing|\b123\s*[- ]?\s*flag\b|\bhook[\s-]*hook[\s-]*rally\b|\bzero[-\s]*sum(?:\s+game)?\b|\bcycle\s+analysis\b|\bfractal\s+analysis\b|\blow[-\s]+volume\s+spike\b|\bpositive\s+hook\b|\bnegative\s+hook\b|بازی[\s‌-]*مجموع[\s‌-]*صفر|هوک[\s‌-]*هوک[\s‌-]*رالی|123[\s‌-]*فلگ/i;
+const NDS_EXPLICIT_ANCHOR = /nodal\s+displacement\s+sequencing|\b123\s*[- ]?\s*flag\b|\bhook[\s-]*hook[\s-]*rally\b|هوک[\s‌-]*هوک[\s‌-]*رالی|123[\s‌-]*فلگ/i;
 const NDS_COMPONENT_PATTERNS = [
   /\bnodes?\b/i, /\bhooks?\b/i, /\bflags?\b/i, /\blip\b/i,
   /\brall(?:y|ies)\b/i, /\bdrops?\b/i, /\bsequenc(?:e|ing)\b/i,
