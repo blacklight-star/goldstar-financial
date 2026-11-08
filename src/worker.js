@@ -345,7 +345,7 @@ export default {
       if (path === "/") return ok({
         name: "Goldstar L2", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED, analysisMode: "disabled_until_verified_market_data",
         styles: ["ICT", "RTM", "NDS"],
-        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/market-data/status","/market-data/latest","/mql5/tools","/mql5/call","/mt5/status","/mt5/latest","/analyze"]
+        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/market-data/status","/market-data/latest","/market-data/crypto/latest","/mql5/tools","/mql5/call","/mt5/status","/mt5/latest","/analyze"]
       });
 
       if (path === "/status") {
@@ -646,16 +646,21 @@ export default {
         try {
           var rawStatus = await env.MARKET_DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM tv_events").first();
           var normalizedStatus = await env.MARKET_DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM gs_market_events").first();
+          var cmcStatus = await env.MARKET_DB.prepare("SELECT COUNT(*) AS quote_count, MAX(quote_last_updated) AS last_quote_updated FROM cmc_quotes").first();
           var rawEventCount = Number(rawStatus && rawStatus.event_count || 0);
           var normalizedEventCount = Number(normalizedStatus && normalizedStatus.event_count || 0);
+          var cmcQuoteCount = Number(cmcStatus && cmcStatus.quote_count || 0);
           return ok({
-            source: "TradingView webhook D1",
+            source: "dedicated market research D1",
             rawEventCount: rawEventCount,
             normalizedEventCount: normalizedEventCount,
             lastRawEventAt: rawStatus && rawStatus.last_received_at || null,
             lastNormalizedEventAt: normalizedStatus && normalizedStatus.last_received_at || null,
+            cmcQuoteCount: cmcQuoteCount,
+            lastCmcQuoteAt: cmcStatus && cmcStatus.last_quote_updated || null,
+            cmcDataReady: cmcQuoteCount > 0,
             rawIngestionReady: rawEventCount > 0,
-            marketDataReady: normalizedEventCount > 0,
+            marketDataReady: normalizedEventCount > 0 || cmcQuoteCount > 0,
             marketAnalysisEnabled: MARKET_ANALYSIS_ENABLED
           });
         } catch (_) {
@@ -686,6 +691,30 @@ export default {
           });
         } catch (_) {
           return err("Market-data event query failed", 503);
+        }
+      }
+
+      if (path === "/market-data/crypto/latest" && method === "GET") {
+        if (!env.MARKET_DB || typeof env.MARKET_DB.prepare !== "function") return err("Dedicated market-data D1 binding unavailable", 503);
+        var cryptoRequestedLimit = Number(url.searchParams.get("limit") || 25);
+        var cryptoLimit = Number.isFinite(cryptoRequestedLimit) ? Math.min(100, Math.max(1, Math.floor(cryptoRequestedLimit))) : 25;
+        var cryptoSymbol = String(url.searchParams.get("symbol") || "").trim().toUpperCase().slice(0, 12);
+        var cryptoCurrency = String(url.searchParams.get("convert") || "USD").trim().toUpperCase();
+        if (!/^[A-Z]{3,5}$/.test(cryptoCurrency)) return err("Invalid quote currency", 400);
+        try {
+          var cryptoResult = await env.MARKET_DB.prepare(
+            "SELECT cmc_id, symbol, name, quote_currency, price, volume_24h, market_cap, percent_change_1h, percent_change_24h, percent_change_7d, cmc_rank, quote_last_updated, ingested_at FROM cmc_quotes WHERE (? = '' OR UPPER(symbol) = UPPER(?)) AND UPPER(quote_currency) = UPPER(?) ORDER BY quote_last_updated DESC LIMIT ?"
+          ).bind(cryptoSymbol, cryptoSymbol, cryptoCurrency, cryptoLimit).all();
+          var cryptoQuotes = cryptoResult && Array.isArray(cryptoResult.results) ? cryptoResult.results : [];
+          return ok({
+            source: "coinmarketcap",
+            assetClass: "crypto",
+            count: cryptoQuotes.length,
+            filters: { symbol: cryptoSymbol || null, convert: cryptoCurrency },
+            quotes: cryptoQuotes
+          });
+        } catch (_) {
+          return err("CoinMarketCap quote query failed", 503);
         }
       }
 
