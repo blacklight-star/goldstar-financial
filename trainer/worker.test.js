@@ -463,3 +463,78 @@ test("author-linked Academia archive rejects redirects outside the exact allowli
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("TG.ME independent archive preserves the canonical Telegram post ID and has no side effects", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = { fetch: 0, ai: 0, writes: 0 };
+  globalThis.fetch = async url => {
+    calls.fetch++;
+    const match = String(url).match(/^https:\/\/tg\.me\/fuzzylogic_nds\/(\d+)$/);
+    assert.ok(match);
+    const id = match[1];
+    const lessonById = { "983": "۶۵", "972": "۶۴", "967": "۶۳", "965": "۶۳", "958": "۶۲", "944": "۶۱" };
+    const lesson = lessonById[id];
+    assert.ok(lesson);
+    const html = `<!doctype html><html><head><title>آموزش استراتژی NDS جلسه شماره ${lesson} — NDS Learning Hub — TG.ME</title></head><body>
+      <main><h1>NDS Learning Hub</h1><p>💎 آموزش استراتژی NDS 📚 جلسه شماره ${lesson} 🎓 توسط جناب آقای دکتر ایرج جعفریان @FuzzyLogic_NDS</p>
+      <a href="https://t.me/fuzzylogic_nds/${id}">original Telegram post</a></main></body></html>`;
+    return new Response(html, { status: 200, headers: { "content-type": "text/html" } });
+  };
+  const env = {
+    KNOWLEDGE: { async get() { return null; }, async put() { calls.writes++; } },
+    AI: { async run() { calls.ai++; throw new Error("Preview diagnostics must not invoke AI"); } }
+  };
+  try {
+    const response = await worker.fetch(new Request(
+      "https://deadbeef-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/tgme-archive-diagnostics"
+    ), env);
+    const result = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(result.ok, true);
+    assert.equal(result.dryRun, true);
+    assert.equal(result.persisted, false);
+    assert.equal(result.aiCalled, false);
+    assert.equal(result.sampleCount, 6);
+    assert.equal(result.sources.length, 6);
+    assert.ok(result.sources.every(item => item.success === true));
+    assert.ok(result.sources.every(item => item.sourceOriginType === "third_party_telegram_archive"));
+    assert.ok(result.sources.every(item => item.sourceCaptureMethod === "tgme_public_post_html"));
+    assert.ok(result.sources.every(item => item.canonicalPostUrl.includes("/fuzzylogic_nds/")));
+    assert.equal(calls.fetch, 6);
+    assert.equal(calls.ai, 0);
+    assert.equal(calls.writes, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("TG.ME archive rejects an individual post redirected outside its exact archive URL", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = { ai: 0, writes: 0 };
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    url: "https://evil.example/fuzzylogic_nds/983",
+    redirected: true,
+    async text() { return "<html><body>NDS Learning Hub جلسه شماره ۶۵ https://t.me/fuzzylogic_nds/983</body></html>"; }
+  });
+  const env = {
+    KNOWLEDGE: { async get() { return null; }, async put() { calls.writes++; } },
+    AI: { async run() { calls.ai++; } }
+  };
+  try {
+    const response = await worker.fetch(new Request(
+      "https://deadbeef-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/tgme-archive-diagnostics"
+    ), env);
+    const result = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(result.ok, false);
+    assert.ok(result.sources.every(item => item.success === false));
+    assert.ok(result.sources.every(item => /redirected outside/.test(item.error)));
+    assert.equal(calls.ai, 0);
+    assert.equal(calls.writes, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
