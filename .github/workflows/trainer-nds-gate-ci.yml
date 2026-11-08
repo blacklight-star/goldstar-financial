@@ -53,7 +53,7 @@ jobs:
             }
             process.stdout.write(signature);
           ')"
-          L2_BASE="https://73ecaa4f-goldstar-financial-v3.goldstar-nsl83.workers.dev"
+          L2_BASE="https://7de8d143-goldstar-financial-v3.goldstar-nsl83.workers.dev"
           hmac_verify="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 \
             -H "Content-Type: application/json" -d "{\"signature\":\"$hmac_signature\"}" \
             "$L2_BASE/__preview/hmac-verify")"
