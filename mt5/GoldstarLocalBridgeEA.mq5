@@ -2,7 +2,7 @@
 #property version   "1.00"
 #property description "Goldstar local MT5 bridge — DEMO account, read-only snapshots only"
 
-input string BridgeUrl = "https://trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/snapshot";
+input string BridgeUrl = "https://mt5-readonly-v5-trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/snapshot";
 input string BridgeKey = "";
 input int IntervalSeconds = 30;
 input int MaxPositions = 30;
