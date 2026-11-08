@@ -12,6 +12,7 @@ function makeKv(initial = {}, options = {}) {
   return {
     values,
     async get(key, options = {}) {
+      if ((options.failGetKeys || []).includes(key)) throw new Error("simulated KV read failure");
       const value = values.get(key);
       if (value === undefined) return null;
       return options.type === "json" ? JSON.parse(value) : value;
@@ -107,12 +108,12 @@ function makeDb(options = {}) {
   };
 }
 
-function makeEnv({ pending = [], active = [], strategy = null, withDb = true, dbOptions = {}, kvOptions = {} } = {}) {
+function makeEnv({ pending = [], active = [], strategy = null, withDb = true, dbOptions = {}, kvOptions = {}, strategyKvOptions = {} } = {}) {
   const KNOWLEDGE = makeKv({
     knowledge_NDS_pending: pending,
     knowledge_NDS: active
   }, kvOptions);
-  const STRATEGY = makeKv(strategy === null ? {} : { current_strategy: strategy });
+  const STRATEGY = makeKv(strategy === null ? {} : { current_strategy: strategy }, strategyKvOptions);
   const DB = withDb ? makeDb(dbOptions) : undefined;
   return {
     env: {
@@ -516,6 +517,38 @@ test("missing pending KV key is treated as an empty queue, not a server error", 
   assert.equal(progressResponse.status, 200);
   const progress = await progressResponse.json();
   assert.equal(progress.pendingNDS, 0);
+});
+
+test("knowledge KV read failures never masquerade as empty approved stores", async () => {
+  const state = makeEnv({ kvOptions: { failGetKeys: ["knowledge_NDS"] } });
+  const response = await worker.fetch(makeRequest("/status", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 500);
+});
+
+test("pending queue read failures return an error instead of an empty queue", async () => {
+  const state = makeEnv({ kvOptions: { failGetKeys: ["knowledge_NDS_pending"] } });
+  const response = await worker.fetch(makeRequest("/training/pending?limit=1", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 500);
+});
+
+test("training progress fails visibly when pending KV cannot be read", async () => {
+  const state = makeEnv({ kvOptions: { failGetKeys: ["knowledge_NDS_pending"] } });
+  const response = await worker.fetch(makeRequest("/training/progress", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 500);
+});
+
+test("strategy KV read failures are not reported as a missing or legacy strategy", async () => {
+  const state = makeEnv({ strategyKvOptions: { failGetKeys: ["current_strategy"] } });
+  const response = await worker.fetch(makeRequest("/status", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 500);
 });
 
 test("strategy synthesis reserves the shared daily AI budget before inference", async () => {
