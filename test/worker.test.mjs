@@ -158,7 +158,7 @@ function sourceEvidencePayloadForTest(rule) {
     contentType: String(rule.contentType || ""),
     category: String(rule.category || ""),
     rule: String(rule.rule || rule.description || ""),
-    conditions: Array.isArray(rule.conditions) ? rule.conditions.map(value { return String(value); }) : [],
+    conditions: Array.isArray(rule.conditions) ? rule.conditions.map(value => String(value)) : [],
     priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : null,
     sourcePostId: String(rule.sourcePostId || ""),
     sourcePostUrl: String(rule.sourcePostUrl || ""),
