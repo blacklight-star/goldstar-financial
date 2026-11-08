@@ -33,12 +33,14 @@ function makeDb(options = {}) {
   const locks = new Map();
   const budgets = new Map();
   const events = [];
+  const cmcQuotes = options.cmcQuotes || [];
   const queries = [];
   return {
     rows,
     locks,
     budgets,
     events,
+    cmcQuotes,
     queries,
     prepare(sql) {
       let args = [];
@@ -94,6 +96,7 @@ function makeDb(options = {}) {
           }
           if (sql.includes("FROM mt5_terminal_snapshots") && sql.includes("COUNT(*)")) return options.mt5Status || { snapshot_count: 0, last_received_at: null };
           if (sql.includes("FROM mt5_terminal_snapshots")) return options.mt5Snapshot || null;
+          if (sql.includes("FROM cmc_quotes") && sql.includes("COUNT(*)")) return { quote_count: cmcQuotes.length, last_quote_updated: cmcQuotes[0]?.quote_last_updated || null };
           if (sql.includes("FROM tv_events")) {
             return { event_count: events.length, last_received_at: events[0]?.received_at || null };
           }
@@ -106,6 +109,11 @@ function makeDb(options = {}) {
           return null;
         },
         async all() {
+          if (sql.includes("FROM cmc_quotes")) {
+            const [symbol, , currency, limit] = args;
+            const filtered = cmcQuotes.filter(row => (!symbol || String(row.symbol).toUpperCase() === String(symbol).toUpperCase()) && String(row.quote_currency).toUpperCase() === String(currency).toUpperCase());
+            return { results: filtered.slice(0, Number(limit || 100)) };
+          }
           if (sql.includes("FROM mt5_positions")) return { results: options.mt5Positions || [] };
           if (sql.includes("FROM mt5_symbol_ticks")) return { results: options.mt5Ticks || [] };
           return { results: events.slice(0, Number(args[4] || 100)) };
@@ -619,6 +627,8 @@ test("market-data status reads raw and normalized D1 counts but remains fail-clo
   const result = await response.json();
   assert.equal(result.rawEventCount, 0);
   assert.equal(result.normalizedEventCount, 0);
+  assert.equal(result.cmcQuoteCount, 0);
+  assert.equal(result.cmcDataReady, false);
   assert.equal(result.marketDataReady, false);
   assert.equal(result.marketAnalysisEnabled, false);
 });
@@ -657,6 +667,10 @@ test("market-data routes fail closed when dedicated MARKET_DB is not bound, even
     "X-API-Key": "general-api-key"
   }), state.env, ctx);
   assert.equal(latest.status, 503);
+  const cryptoLatest = await worker.fetch(makeRequest("/market-data/crypto/latest", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(cryptoLatest.status, 503);
 });
 
 test("market-data routes do not depend on the NDS/audit DB when MARKET_DB is explicitly bound", async () => {
@@ -665,6 +679,45 @@ test("market-data routes do not depend on the NDS/audit DB when MARKET_DB is exp
     "X-API-Key": "general-api-key"
   }), state.env, ctx);
   assert.equal(response.status, 200);
+});
+
+test("market-data status reports CoinMarketCap crypto quote availability separately", async () => {
+  const state = makeEnv();
+  state.MARKET_DB.cmcQuotes.push({
+    cmc_id: 1, symbol: "BTC", name: "Bitcoin", quote_currency: "USD",
+    price: 65000, volume_24h: 1000, market_cap: 1200000,
+    percent_change_1h: 0.2, percent_change_24h: 1.1, percent_change_7d: 3.2,
+    cmc_rank: 1, quote_last_updated: "2026-11-08T10:00:00.000Z", ingested_at: "2026-11-08T10:00:01.000Z"
+  });
+  const response = await worker.fetch(makeRequest("/market-data/status", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.cmcQuoteCount, 1);
+  assert.equal(result.cmcDataReady, true);
+  assert.equal(result.marketAnalysisEnabled, false);
+});
+
+test("market-data crypto latest returns bounded CoinMarketCap quotes without raw payloads", async () => {
+  const state = makeEnv();
+  state.MARKET_DB.cmcQuotes.push({
+    cmc_id: 1, symbol: "BTC", name: "Bitcoin", quote_currency: "USD",
+    price: 65000, volume_24h: 1000, market_cap: 1200000,
+    percent_change_1h: 0.2, percent_change_24h: 1.1, percent_change_7d: 3.2,
+    cmc_rank: 1, quote_last_updated: "2026-11-08T10:00:00.000Z", ingested_at: "2026-11-08T10:00:01.000Z"
+  });
+  const response = await worker.fetch(makeRequest("/market-data/crypto/latest?symbol=btc&convert=USD&limit=10", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.source, "coinmarketcap");
+  assert.equal(result.assetClass, "crypto");
+  assert.equal(result.count, 1);
+  assert.equal(result.quotes[0].symbol, "BTC");
+  assert.equal("raw_json" in result.quotes[0], false);
+  assert.deepEqual(state.MARKET_DB.queries.at(-1).args, ["BTC", "BTC", "USD", 10]);
 });
 
 test("market analysis remains disabled even when the read-only event store is bound", async () => {
@@ -844,6 +897,7 @@ test("migrations define shared controls and isolate market-research event tables
   assert.match(lockMigration, /gs_ai_daily_budget/);
   assert.match(supportMigration, /gs_audit_log/);
   assert.match(marketMigration, /CREATE TABLE IF NOT EXISTS tv_events/);
+  assert.match(marketMigration, /CREATE TABLE IF NOT EXISTS cmc_quotes/);
   assert.match(marketMigration, /CREATE TABLE IF NOT EXISTS gs_market_events/);
   assert.match(marketMigration, /goldstar_market_research_staging/);
 });
