@@ -785,11 +785,24 @@ export default {
             diagnostics: page.diagnostics
           };
         } catch (error) {
-          return { channel: channel.name, success: false, retrievalStatus: "fetch_error", error: String(error.message || error).slice(0, 240) };
+          return {
+            channel: channel.name,
+            sourceRole: channel.diagnosticOnly ? "diagnostic_only" : "configured_source",
+            success: false,
+            retrievalStatus: "fetch_error",
+            error: String(error.message || error).slice(0, 240)
+          };
         }
       }));
+      const configuredResults = results.filter(function(item) { return item.sourceRole === "configured_source"; });
       return json({
-        ok: results.every(function(item) { return item.success; }),
+        ok: configuredResults.length === CHANNELS.length && configuredResults.every(function(item) {
+          return item.success === true && item.retrievalStatus === "posts_extracted" && item.postCount > 0;
+        }),
+        diagnosticOnly: {
+          total: results.length - configuredResults.length,
+          successful: results.filter(function(item) { return item.sourceRole === "diagnostic_only" && item.success === true; }).length
+        },
         dryRun: true,
         persisted: false,
         aiCalled: false,
