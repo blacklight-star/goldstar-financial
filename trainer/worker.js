@@ -111,6 +111,10 @@ function sourceEvidencePayload(rule) {
   return {
     id: String(rule.id || ""),
     contentType: String(rule.contentType || ""),
+    category: String(rule.category || ""),
+    rule: String(rule.rule || rule.description || ""),
+    conditions: Array.isArray(rule.conditions) ? rule.conditions.map(value => String(value)) : [],
+    priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : null,
     sourcePostId: String(rule.sourcePostId || ""),
     sourcePostUrl: String(rule.sourcePostUrl || ""),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
