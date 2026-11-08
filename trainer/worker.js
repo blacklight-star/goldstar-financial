@@ -548,7 +548,7 @@ function decodeIndependentHtmlEntities(value) {
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
 }
 
-export function extractAcademiaDocumentText(html) {
+export function extractHtmlText(html) {
   let source = String(html || "");
   source = source
     .replace(/<!--[\s\S]*?-->/g, " ")
@@ -596,7 +596,7 @@ async function readTgmeArchivePost(source) {
       !/FuzzyLogic_NDS|fuzzylogic_nds/i.test(html)) {
     throw new Error("TG.ME page did not expose the matching original Telegram channel/post identity");
   }
-  const text = extractAcademiaDocumentText(html);
+  const text = extractHtmlText(html);
   const normalized = normalizeNdsText(text);
   if (text.length < 70 || !/nds|ان دی اس/i.test(normalized) ||
       !/جلسه/i.test(normalized) || !normalized.includes(source.lesson.split("-")[0])) {
