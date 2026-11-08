@@ -198,6 +198,8 @@ test("current candidate code accepts the previously issued V17 hostname in a fet
     assert.equal(result.persisted, false);
     assert.equal(result.aiCalled, false);
     assert.equal(result.channels.length, 8);
+    assert.equal(result.ok, false);
+    assert.equal(result.channels.filter(channel => channel.sourceRole === "configured_source").length, 4);
     assert.equal(calls.ai, 0);
     assert.equal(calls.writes, 0);
     assert.equal(calls.fetch, 8);
@@ -313,4 +315,42 @@ test("commit journal rejects keys outside the Trainer write allowlist", async ()
   };
   await assert.rejects(recoverPendingKnowledgeCommit(env, "owner-1"), /invalid or duplicate write/);
   assert.equal(store.has("some-unrelated-key"), false);
+});
+
+
+test("source diagnostics require all configured channels but not diagnostic-only channels", async () => {
+  const originalFetch = globalThis.fetch;
+  const configured = new Set(["NDS4ALLVIDEOS", "FuzzyLogic_NDS", "BNJ1I", "cottagends"]);
+  const calls = { ai: 0, writes: 0, fetch: 0 };
+  globalThis.fetch = async input => {
+    calls.fetch++;
+    const url = new URL(typeof input === "string" ? input : input.url);
+    const channel = url.pathname.split("/").pop();
+    if (!configured.has(channel)) {
+      return new Response("<html><body>No public posts</body></html>", { status: 200, headers: { "content-type": "text/html" } });
+    }
+    const html = '<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="' + channel + '/456"><div class="tgme_widget_message_text">Nodal Displacement Sequencing contains a Hook, a Rally, and a Flag with sufficient source text for live-style diagnostics.</div></div></div>';
+    return new Response(html, { status: 200, headers: { "content-type": "text/html" } });
+  };
+  const env = {
+    KNOWLEDGE: { async get() { return null; }, async put() { calls.writes++; } },
+    AI: { async run() { calls.ai++; throw new Error("diagnostics must not call AI"); } }
+  };
+  try {
+    const base = "https://deadbeef-goldstar-trainer-staging.goldstar-nsl83.workers.dev";
+    const response = await worker.fetch(new Request(base + "/__preview/source-diagnostics"), env);
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.ok, true);
+    assert.equal(result.channels.length, 8);
+    assert.deepEqual(result.channels.filter(item => item.sourceRole === "configured_source").map(item => item.channel).sort(), Array.from(configured).sort());
+    assert.equal(result.channels.filter(item => item.sourceRole === "configured_source").every(item => item.success && item.postCount > 0), true);
+    assert.equal(result.diagnosticOnly.total, 4);
+    assert.equal(result.diagnosticOnly.successful, 0);
+    assert.equal(calls.fetch, 8);
+    assert.equal(calls.ai, 0);
+    assert.equal(calls.writes, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
