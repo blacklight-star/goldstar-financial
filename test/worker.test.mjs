@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import worker from "../src/worker.js";
 
@@ -124,6 +124,7 @@ function makeEnv({ pending = [], active = [], strategy = null, withDb = true, wi
     env: {
       API_KEY: "general-api-key",
       L1_BRIDGE_KEY: "dedicated-l1-bridge-key",
+      NDS_EVIDENCE_HMAC_KEY: TEST_NDS_EVIDENCE_KEY,
       KNOWLEDGE,
       STRATEGY,
       DB,
@@ -143,10 +144,25 @@ function makeEnv({ pending = [], active = [], strategy = null, withDb = true, wi
   };
 }
 
+const TEST_NDS_EVIDENCE_KEY = "unit-test-nds-evidence-key-32-bytes-minimum";
+
+function sourceEvidencePayloadForTest(rule) {
+  return {
+    id: String(rule.id || ""),
+    contentType: String(rule.contentType || ""),
+    sourcePostId: String(rule.sourcePostId || ""),
+    sourcePostUrl: String(rule.sourcePostUrl || ""),
+    sourceExcerptHash: String(rule.sourceExcerptHash || ""),
+    sourcePostContentHash: String(rule.sourcePostContentHash || ""),
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
+    sourceExcerptVerified: rule.sourceExcerptVerified === true
+  };
+}
+
 function evidenceRule(overrides = {}) {
   const sourceExcerpt = "The market forms a completed positive cycle after the two hooks and two rallies, followed by the flag.";
   const sourceExcerptHash = createHash("sha256").update(sourceExcerpt).digest("hex");
-  return {
+  const rule = {
     id: "rule-001",
     style: "NDS",
     category: "cycle",
@@ -158,8 +174,13 @@ function evidenceRule(overrides = {}) {
     sourceExcerpt,
     sourceExcerptHash,
     sourceExcerptVerified: true,
+    sourcePostContentHash: createHash("sha256").update(sourceExcerpt).digest("hex"),
+    sourceCaptureMethod: "telegram_public_post_html",
     ...overrides
   };
+  rule.sourceEvidenceSignature = createHmac("sha256", TEST_NDS_EVIDENCE_KEY)
+    .update(JSON.stringify(sourceEvidencePayloadForTest(rule))).digest("hex");
+  return rule;
 }
 
 function approvalRulePayload(rule) {
@@ -175,6 +196,8 @@ function approvalRulePayload(rule) {
     sourcePostUrl: String(rule.sourcePostUrl || ""),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
+    sourceEvidenceSignature: String(rule.sourceEvidenceSignature || ""),
     sourceExcerptVerified: rule.sourceExcerptVerified === true
   };
 }
@@ -251,6 +274,25 @@ test("approval fails closed if either pending or active KV read fails", async ()
     assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS"), activeBefore);
     assert.equal(state.DB.locks.size, 0);
   }
+});
+
+test("source evidence HMAC is mandatory and tamper-evident", async () => {
+  const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
+  const valid = evidenceRule();
+  const noKey = makeEnv({ pending: [valid] });
+  noKey.env.NDS_EVIDENCE_HMAC_KEY = "";
+  const noKeyResponse = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([valid.id], [valid]), headers), noKey.env, ctx);
+  assert.equal(noKeyResponse.status, 409);
+
+  const tampered = evidenceRule({ sourcePostContentHash: "0".repeat(64) });
+  const tamperedState = makeEnv({ pending: [tampered] });
+  const tamperedResponse = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([tampered.id], [tampered]), headers), tamperedState.env, ctx);
+  assert.equal(tamperedResponse.status, 409);
+
+  const wrongCapture = evidenceRule({ sourceCaptureMethod: "untrusted_import" });
+  const wrongCaptureState = makeEnv({ pending: [wrongCapture] });
+  const wrongCaptureResponse = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([wrongCapture.id], [wrongCapture]), headers), wrongCaptureState.env, ctx);
+  assert.equal(wrongCaptureResponse.status, 409);
 });
 
 test("approval requires the explicit confirmation and unique IDs", async () => {
