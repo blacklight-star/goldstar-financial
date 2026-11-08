@@ -17,3 +17,22 @@ jobs:
         with:
           node-version: 20
       - run: npm test
+
+      - name: Live immutable preview health checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_json() {
+            name="$1"; url="$2"; expression="$3"
+            response="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-connrefused --connect-timeout 10 --max-time 20 "$url")"
+            CHECK_NAME="$name" CHECK_EXPR="$expression" RESPONSE="$response" node -e '
+              const data = JSON.parse(process.env.RESPONSE);
+              const ok = new Function("data", "return (" + process.env.CHECK_EXPR + ")")(data);
+              if (!ok) { console.error(process.env.CHECK_NAME + " health check failed:", data); process.exit(1); }
+              console.log(process.env.CHECK_NAME + " preview health OK");
+            '
+          }
+          check_json "Financial L2 V29" "https://05804278-goldstar-financial-v3.goldstar-nsl83.workers.dev/health" 'data.status === "ok" && data.analysisEnabled === false'
+          check_json "MQL5 V4" "https://4003ef9a-trading-research-agent-staging.goldstar-nsl83.workers.dev/health" 'data.ok === true && data.mql5_configured === true && data.database_configured === true'
+          check_json "MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health" 'data.ok === true && data.mt5_demo_bridge_configured === true && data.database_configured === true && data.mode === "demo_read_only"'
+          check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health" 'data.ok === true && data.scheduler === "paused; no Cron triggers configured"'
