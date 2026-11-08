@@ -219,6 +219,36 @@ test("general API key cannot approve NDS rules", async () => {
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
 });
 
+test("all knowledge and strategy read failures fail closed instead of reporting empty state", async () => {
+  const knowledgeState = makeEnv({ kvOptions: { failGetKeys: ["knowledge_NDS"] } });
+  const knowledgeResponse = await worker.fetch(makeRequest("/knowledge/nds", undefined, {
+    "X-API-Key": "general-api-key"
+  }), knowledgeState.env, ctx);
+  assert.equal(knowledgeResponse.status, 500);
+
+  const strategyState = makeEnv({ strategyKvOptions: { failGetKeys: ["current_strategy"] } });
+  const strategyResponse = await worker.fetch(makeRequest("/strategy", undefined, {
+    "X-API-Key": "general-api-key"
+  }), strategyState.env, ctx);
+  assert.equal(strategyResponse.status, 500);
+});
+
+test("approval fails closed if either pending or active KV read fails", async () => {
+  const rule = evidenceRule();
+  const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
+  for (const key of ["knowledge_NDS_pending", "knowledge_NDS"]) {
+    const state = makeEnv({ pending: [rule], kvOptions: { failGetKeys: [key] } });
+    const pendingBefore = state.KNOWLEDGE.values.get("knowledge_NDS_pending");
+    const activeBefore = state.KNOWLEDGE.values.get("knowledge_NDS");
+    const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), headers), state.env, ctx);
+    assert.equal(response.status, 500);
+    assert.equal(state.DB.rows.size, 0);
+    assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS_pending"), pendingBefore);
+    assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS"), activeBefore);
+    assert.equal(state.DB.locks.size, 0);
+  }
+});
+
 test("approval requires the explicit confirmation and unique IDs", async () => {
   const rule = evidenceRule();
   const state = makeEnv({ pending: [rule] });
