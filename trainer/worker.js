@@ -12,27 +12,62 @@ const DIAGNOSTIC_CHANNELS = [
   { url: "https://t.me/s/NDS_Algorithm", name: "NDS_Algorithm", diagnosticOnly: true }
 ];
 const AI_MODEL = "@cf/zai-org/glm-4.7-flash";
-// NDS-specific retrieval gate. This is a prefilter, not rule validation or approval.
-const NDS_EXPLICIT_ANCHOR = /nodal\s+displacement\s+sequencing|\b123\s*[- ]?\s*flag\b|\bhook[\s-]*hook[\s-]*rally\b|هوک[\s‌-]*هوک[\s‌-]*رالی|123[\s‌-]*فلگ/i;
-const NDS_COMPONENT_PATTERNS = [
-  /\bnodes?\b/i, /\bhooks?\b/i, /\bflags?\b/i, /\blip\b/i,
-  /\brall(?:y|ies)\b/i, /\bdrops?\b/i, /\bsequenc(?:e|ing)\b/i,
-  /\bfractals?\b/i, /\bsymmetry\b/i, /\bSMI\b/i, /\b86[.,]4\s*%?/i,
-  /\b[NS][123]\b/i,
-  /نود|گره/i, /هوک/i, /فلگ|لیپ/i, /رالی/i, /دراپ/i,
-  /سکانس|توالی/i, /فراکتال/i, /تقارن/i, /چرخه|سایکل/i,
-  /اسپایک|۸۶[٫./]۴/i
-];
-export function isNdsRelevantText(value) {
-  const text = String(value || "").normalize("NFKC");
-  if (text.trim().length < 120) return false;
-  if (NDS_EXPLICIT_ANCHOR.test(text)) return true;
-  let matchedComponents = 0;
-  for (const pattern of NDS_COMPONENT_PATTERNS) {
-    if (pattern.test(text)) matchedComponents++;
-  }
-  return matchedComponents >= 3;
+// High-precision NDS retrieval gate. It is a source prefilter only:
+// it never validates, approves, or promotes a trading rule.
+const NDS_MIN_SOURCE_LENGTH = 120;
+const NDS_EXPLICIT_ANCHOR =
+  /\bnodal\s+displacement\s+sequencing\b|\b123\s*[-_ ]?\s*flag\b|\bhook\s*[-–—>→]+\s*hook\s*[-–—>→]+\s*rall(?:y|ies)\b|هوک\s*[-–—>→]+\s*هوک\s*[-–—>→]+\s*رالی/u;
+const NDS_RELATION_CONNECTOR =
+  /\b(?:after|before|then|followed\s+by|following|preced(?:e|es|ed)|prior\s+to|contains?|includes?|consists?\s+of|made\s+of|formed\s+by|within|parent|child|higher|lower|priority|ends?\s+with|closes?\s+with)\b|بعد(?:\s*از)?|پس\s*از|سپس|قبل\s*از|به\s*دنبال|شامل|متشکل\s*از|والد|فرزند|اولویت|پایان|بسته\s*می\s*شود/u;
+const NDS_SENTENCE_BOUNDARY = /[.!?؟؛;\n]+/u;
+
+function normalizeNdsText(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .replace(/[يى]/g, "ی")
+    .replace(/ك/g, "ک")
+    .replace(/[۰-۹٠-٩]/g, digit => String("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩".indexOf(digit) % 10))
+    .replace(/[\u200c\u200d\u200e\u200f\u202a-\u202e]/g, " ")
+    .toLowerCase();
 }
+
+function hasNdsRelatedPair(sentences, leftPattern, rightPattern) {
+  return sentences.some(sentence =>
+    leftPattern.test(sentence) &&
+    rightPattern.test(sentence) &&
+    NDS_RELATION_CONNECTOR.test(sentence)
+  );
+}
+
+export function isNdsRelevantText(value) {
+  const text = normalizeNdsText(value);
+  if (text.trim().length < NDS_MIN_SOURCE_LENGTH) return false;
+  if (NDS_EXPLICIT_ANCHOR.test(text)) return true;
+
+  const sentences = text.split(NDS_SENTENCE_BOUNDARY).map(sentence => sentence.trim()).filter(Boolean);
+  const relationships = [
+    hasNdsRelatedPair(sentences, /\bhooks?\b|هوک/u, /\bnodes?\b|گره|نود/u),
+    hasNdsRelatedPair(sentences, /\bhooks?\b|هوک/u, /\brall(?:y|ies)\b|رالی/u),
+    hasNdsRelatedPair(sentences, /\brall(?:y|ies)\b|رالی/u, /\bflags?\b|فلگ/u),
+    hasNdsRelatedPair(sentences, /\bflags?\b|فلگ/u, /\blip\b|لیپ/u),
+    hasNdsRelatedPair(sentences, /\brall(?:y|ies)\b|رالی/u, /\bdrops?\b|دراپ/u),
+    hasNdsRelatedPair(sentences, /\bnodes?\b|گره|نود/u, /\b(?:parent|child|priority|higher|lower|sub-?node)\b|والد|فرزند|اولویت/u)
+  ];
+  return relationships.filter(Boolean).length >= 2;
+}
+
+// Immutable Preview URLs are version-specific; aliases are not DNS routes.
+const PREVIEW_HOSTS = new Set([
+  "goldstar-trainer-staging.goldstar-nsl83.workers.dev",
+  "staging-goldstar-trainer.goldstar-nsl83.workers.dev",
+  "staging-v40-goldstar-trainer.goldstar-nsl83.workers.dev",
+  "nds-gate-v12-goldstar-trainer-staging.goldstar-nsl83.workers.dev",
+  "45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev"
+]);
+function isAllowedPreviewHost(url) {
+  return PREVIEW_HOSTS.has(url.hostname);
+}
+
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
   headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
@@ -562,7 +597,7 @@ async function runScheduledTraining(env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/__preview/parser-selftest" && request.method === "GET" && (url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "staging-v40-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev" || url.hostname === "nds-gate-v12-goldstar-trainer-staging.goldstar-nsl83.workers.dev")) {
+    if (url.pathname === "/__preview/parser-selftest" && request.method === "GET" && isAllowedPreviewHost(url)) {
       const sampleHtml = '<div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/125"><div class="tgme_widget_message_text js-message_text">Rule A: price sweeps prior low <div class="tgme_widget_message_link_preview">nested detail</div> and then reclaims it &amp; confirms.</div><div class="tgme_widget_message_caption">Risk must be defined before entry.</div></div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/126"><div class="tgme_widget_message_text js-message_text">Rule B: wait for higher-timeframe confirmation.</div></div></div>';
       const parsed = parseTelegramPosts(sampleHtml, { name: "NDS4ALLVIDEOS" });
       const lowerCaseHtml = sampleHtml.replace(/NDS4ALLVIDEOS\//g, "fuzzylogic_nds/");
@@ -584,7 +619,7 @@ export default {
       };
       return json({ success: Object.values(checks).every(Boolean), checks, parsed });
     }
-    if (url.pathname === "/__preview/dry-run" && request.method === "GET" && (url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "staging-v40-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev" || url.hostname === "nds-gate-v12-goldstar-trainer-staging.goldstar-nsl83.workers.dev")) {
+    if (url.pathname === "/__preview/dry-run" && request.method === "GET" && isAllowedPreviewHost(url)) {
       try {
         const channelName = url.searchParams.get("channel") || CHANNELS[0].name;
         // This preview route is public and must never trigger Workers AI.
@@ -595,8 +630,7 @@ export default {
       }
     }
     if (url.pathname === "/__preview/source-diagnostics" && request.method === "GET" &&
-        (url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev" || url.hostname === "nds-gate-v12-goldstar-trainer-staging.goldstar-nsl83.workers.dev" ||
-         url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev")) {
+        isAllowedPreviewHost(url)) {
       const results = await Promise.all(DIAGNOSTIC_CHANNELS.map(async function(channel) {
         try {
           const page = await readChannel(env, channel);
