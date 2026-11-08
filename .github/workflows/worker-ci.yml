@@ -48,6 +48,14 @@ jobs:
                     data.cmc_configured === true &&
                     data.ingest_auth_configured === true;
                   break;
+                case "Goldstar CMC Staging":
+                  ok = data.ok === true &&
+                    data.service === "goldstar-cmc-ingest-staging" &&
+                    data.market_db_configured === true &&
+                    data.vault_db_configured === true &&
+                    data.encryption_key_configured === true &&
+                    data.credential_vault === "AES-256-GCM; isolated EU D1";
+                  break;
               }
               if (!ok) { console.error(process.env.CHECK_NAME + " health check failed:", data); process.exit(1); }
               console.log(process.env.CHECK_NAME + " preview health OK");
@@ -57,3 +65,4 @@ jobs:
           check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
           check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
+          check_json "Goldstar CMC Staging" "https://goldstar-cmc-ingest-staging.goldstar-nsl83.workers.dev/health"
