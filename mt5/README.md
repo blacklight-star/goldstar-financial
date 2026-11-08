@@ -19,11 +19,11 @@ This Expert Advisor sends a periodic snapshot from a locally running MetaTrader 
 3. In MT5, open Tools → Options → Expert Advisors and enable Allow WebRequest for listed URL.
 4. Add exactly: https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev
 5. Attach GoldstarLocalBridgeEA to one chart on the AMarkets DEMO account.
-6. In EA Inputs, paste the separately issued MT5_BRIDGE_KEY into BridgeKey; keep the 60-second interval.
+6. In Cloudflare, rotate the existing `MT5_BRIDGE_KEY` secret on `trading-research-agent-staging` to a new random value you control. Enter that same value in EA Inputs → `BridgeKey`; do not send it in chat. Keep the 60-second interval.
 7. Confirm the Experts tab reports “demo snapshot accepted”.
 
 ## Credential handling
 
 - MT5_BRIDGE_KEY is a dedicated ingestion token, not an AMarkets password or MQL5 API key.
-- It is stored as a Cloudflare Worker secret and entered only in the EA Inputs on the user's PC.
+- The V5 preview already has the secret binding, but its value cannot be retrieved. The owner must rotate it to a value they know and use the same value only in Cloudflare's encrypted secret field and EA Inputs on the local PC.
 - Never place the key in the source file, Git, or a TradingView alert.
