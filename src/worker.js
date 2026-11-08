@@ -91,14 +91,17 @@ async function ai(env, prompt) {
 }
 
 async function getRules(env) {
+  // A missing key is a valid empty store; a KV read failure is not.
+  // Never turn an unavailable knowledge store into an apparently empty/healthy state.
   var results = await Promise.all([
-    env.KNOWLEDGE.get("knowledge_ICT", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; }),
-    env.KNOWLEDGE.get("knowledge_RTM", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; }),
-    env.KNOWLEDGE.get("knowledge_NDS", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; }),
+    env.KNOWLEDGE.get("knowledge_ICT", { type: "json", cacheTtl: KV_CACHE_TTL }),
+    env.KNOWLEDGE.get("knowledge_RTM", { type: "json", cacheTtl: KV_CACHE_TTL }),
+    env.KNOWLEDGE.get("knowledge_NDS", { type: "json", cacheTtl: KV_CACHE_TTL }),
   ]);
-  var i = results[0] || [];
-  var r = results[1] || [];
-  var n = results[2] || [];
+  var i = results[0] === null ? [] : results[0];
+  var r = results[1] === null ? [] : results[1];
+  var n = results[2] === null ? [] : results[2];
+  if (![i, r, n].every(Array.isArray)) throw new Error("Knowledge KV returned an invalid store shape");
   var approved = function(list) { return list.filter(function(rule) { return rule && rule.validationStatus === "approved"; }); };
   var ai = approved(i); var ar = approved(r); var an = approved(n);
   var legacy = { ict: i.length - ai.length, rtm: r.length - ar.length, nds: n.length - an.length };
@@ -248,7 +251,7 @@ export default {
 
       if (path === "/status") {
         var k = await getRules(env);
-        var strat = await env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL }).catch(function() { return null; });
+        var strat = await env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL });
         var strategyRecord = parseStrategyRecord(strat);
         var strategyReady = await isApprovedStrategy(strat, k.all);
         var strategyStatus = strategyReady ? "approved" : (strategyRecord ? (strategyRecord.status || "unapproved") : (strat ? "legacy_unverified" : "not_created"));
@@ -270,11 +273,12 @@ export default {
 
       if (path === "/training/progress") {
         var k2 = await getRules(env);
-        return ok({ ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length, approvedTotal: k2.all.length, legacy: k2.legacy, pendingNDS: ((await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" }).catch(function() { return null; })) || []).length });
+        return ok({ ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length, approvedTotal: k2.all.length, legacy: k2.legacy, pendingNDS: (function(value) { return value === null ? 0 : (Array.isArray(value) ? value.length : -1); })(await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })) });
       }
 
       if (path === "/training/pending" && method === "GET") {
-        var pendingRules = (await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return null; })) || [];
+        var pendingRaw = await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json", cacheTtl: KV_CACHE_TTL });
+        var pendingRules = pendingRaw === null ? [] : pendingRaw;
         if (!Array.isArray(pendingRules)) return err("Pending NDS store has invalid shape", 500);
         var limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") || 10)));
         return ok({ status: "pending_review", count: pendingRules.length, returned: Math.min(limit, pendingRules.length), rules: pendingRules.slice(0, limit) });
