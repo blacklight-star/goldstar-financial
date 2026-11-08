@@ -162,7 +162,7 @@ function makeEnv({ pending = [], active = [], otherKnowledge = {}, strategy = nu
 const TEST_NDS_EVIDENCE_KEY = "unit-test-nds-evidence-key-32-bytes-minimum";
 
 function sourceEvidencePayloadForTest(rule) {
-  return {
+  const payload = {
     id: String(rule.id || ""),
     contentType: String(rule.contentType || ""),
     category: String(rule.category || ""),
@@ -173,9 +173,11 @@ function sourceEvidencePayloadForTest(rule) {
     sourcePostUrl: String(rule.sourcePostUrl || ""),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
-    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
-    sourceExcerptVerified: rule.sourceExcerptVerified === true
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
   };
+  if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
+  payload.sourceExcerptVerified = rule.sourceExcerptVerified === true;
+  return payload;
 }
 
 function evidenceRule(overrides = {}) {
@@ -197,6 +199,7 @@ function evidenceRule(overrides = {}) {
     sourceExcerptVerified: true,
     sourcePostContentHash: createHash("sha256").update(sourceExcerpt).digest("hex"),
     sourceCaptureMethod: "telegram_public_post_html",
+    sourceOriginType: "official_telegram_channel",
     ...overrides
   };
   rule.sourceEvidenceSignature = createHmac("sha256", TEST_NDS_EVIDENCE_KEY)
@@ -205,7 +208,7 @@ function evidenceRule(overrides = {}) {
 }
 
 function approvalRulePayload(rule) {
-  return {
+  const payload = {
     id: String(rule.id || ""),
     validationStatus: String(rule.validationStatus || ""),
     contentType: String(rule.contentType || ""),
@@ -217,10 +220,12 @@ function approvalRulePayload(rule) {
     sourcePostUrl: String(rule.sourcePostUrl || ""),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
-    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
-    sourceEvidenceSignature: String(rule.sourceEvidenceSignature || ""),
-    sourceExcerptVerified: rule.sourceExcerptVerified === true
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
   };
+  if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
+  payload.sourceEvidenceSignature = String(rule.sourceEvidenceSignature || "");
+  payload.sourceExcerptVerified = rule.sourceExcerptVerified === true;
+  return payload;
 }
 
 function makeApprovalBody(ids, rules, overrides = {}) {
@@ -978,4 +983,40 @@ test("Preview-only HMAC interoperability route verifies the fixed Trainer fixtur
   assert.equal(blocked.status, 404);
   assert.equal(state.DB.rows.size, 0);
   assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS_pending"), JSON.stringify([]));
+});
+
+
+test("allowlisted author-linked Academia document can be approval-eligible but other independent archives cannot", async () => {
+  const authorLinked = evidenceRule({
+    id: "academia-nds-english-v1",
+    sourcePostId: "129627974",
+    sourcePostUrl: "https://www.academia.edu/129627974/NDS_Strategy_English_Version",
+    sourceCaptureMethod: "academia_author_published_document_html",
+    sourceOriginType: "author_linked_independent_platform"
+  });
+  const unknownDocument = evidenceRule({
+    id: "academia-unknown",
+    sourcePostId: "129627974",
+    sourcePostUrl: "https://www.academia.edu/129627974/Other_Document",
+    sourceCaptureMethod: "academia_author_published_document_html",
+    sourceOriginType: "author_linked_independent_platform"
+  });
+  const unverifiedMirror = evidenceRule({
+    id: "telemetr-mirror",
+    sourcePostId: "129627974",
+    sourcePostUrl: "https://telemetr.io/en/channels/1645847716-fuzzylogic_nds/posts",
+    sourceCaptureMethod: "telemetr_archive_html",
+    sourceOriginType: "third_party_telegram_archive"
+  });
+  const state = makeEnv({ pending: [authorLinked, unknownDocument, unverifiedMirror] });
+  const response = await worker.fetch(makeRequest("/training/pending", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.totalPendingEntries, 3);
+  assert.equal(result.approvalEligibleCount, 1);
+  assert.equal(result.rules.find(rule => rule.id === "academia-nds-english-v1").approvalEligible, true);
+  assert.equal(result.rules.find(rule => rule.id === "academia-unknown").approvalEligible, false);
+  assert.equal(result.rules.find(rule => rule.id === "telemetr-mirror").approvalEligible, false);
 });
