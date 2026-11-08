@@ -124,6 +124,8 @@ function makeEnv({ pending = [], active = [], strategy = null, withDb = true, wi
     env: {
       API_KEY: "general-api-key",
       L1_BRIDGE_KEY: "dedicated-l1-bridge-key",
+      MQL5_GATEWAY_API_KEY: "mql5-client-gateway-secret",
+      MQL5_GATEWAY_URL: "https://mql5-readonly-v4-trading-research-agent-staging.goldstar-nsl83.workers.dev",
       NDS_EVIDENCE_HMAC_KEY: TEST_NDS_EVIDENCE_KEY,
       KNOWLEDGE,
       STRATEGY,
@@ -244,6 +246,60 @@ test("general API key cannot approve NDS rules", async () => {
   assert.equal(response.status, 403);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
+});
+
+test("MQL5 proxy requires L1 bridge authentication, even with general API key", async () => {
+  const state = makeEnv();
+  const response = await worker.fetch(makeRequest("/mql5/tools", {}, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 403);
+});
+
+test("MQL5 proxy forwards only marketdata calls with its separate gateway secret", async () => {
+  const state = makeEnv();
+  const originalFetch = globalThis.fetch;
+  let captured = null;
+  globalThis.fetch = async (url, init) => {
+    captured = { url: String(url), authorization: init.headers.Authorization, body: JSON.parse(init.body) };
+    return new Response(JSON.stringify({ ok: true, result: { tool: "marketdata_get_symbol_info" } }), {
+      status: 200, headers: { "content-type": "application/json" }
+    });
+  };
+  try {
+    const response = await worker.fetch(makeRequest("/mql5/call", {
+      name: "marketdata_get_symbol_info", arguments: { symbol: "EURUSD" }
+    }, { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" }), state.env, ctx);
+    assert.equal(response.status, 200);
+    assert.equal(captured.authorization, "Bearer mql5-client-gateway-secret");
+    assert.equal(captured.url, state.env.MQL5_GATEWAY_URL + "/mql5/call");
+    assert.equal(captured.body.name, "marketdata_get_symbol_info");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("MQL5 proxy rejects trading tools and missing gateway configuration", async () => {
+  const state = makeEnv();
+  const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
+  const denied = await worker.fetch(makeRequest("/mql5/call", {
+    name: "trade_place_order", arguments: { symbol: "EURUSD" }
+  }, headers), state.env, ctx);
+  assert.equal(denied.status, 400);
+  const missing = makeEnv();
+  missing.env.MQL5_GATEWAY_API_KEY = "";
+  const unavailable = await worker.fetch(makeRequest("/mql5/tools", {}, headers), missing.env, ctx);
+  assert.equal(unavailable.status, 503);
+});
+
+test("MQL5 proxy bounds request size and returns 4xx validation statuses", async () => {
+  const state = makeEnv();
+  const response = await worker.fetch(new Request("https://l2.example/mql5/call", {
+    method: "POST",
+    headers: { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key", "content-length": "9000" },
+    body: JSON.stringify({ name: "marketdata_get_symbol_info" })
+  }), state.env, ctx);
+  assert.equal(response.status, 413);
 });
 
 test("all knowledge and strategy read failures fail closed instead of reporting empty state", async () => {
