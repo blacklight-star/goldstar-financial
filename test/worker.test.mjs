@@ -156,6 +156,10 @@ function sourceEvidencePayloadForTest(rule) {
   return {
     id: String(rule.id || ""),
     contentType: String(rule.contentType || ""),
+    category: String(rule.category || ""),
+    rule: String(rule.rule || rule.description || ""),
+    conditions: Array.isArray(rule.conditions) ? rule.conditions.map(value { return String(value); }) : [],
+    priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : null,
     sourcePostId: String(rule.sourcePostId || ""),
     sourcePostUrl: String(rule.sourcePostUrl || ""),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
@@ -173,6 +177,8 @@ function evidenceRule(overrides = {}) {
     style: "NDS",
     category: "cycle",
     rule: "A completed positive cycle requires the two hooks and two rallies before the flag.",
+    conditions: ["Two hooks and two rallies must precede the flag."],
+    priority: 1,
     validationStatus: "pending",
     contentType: "trading_rule",
     sourcePostId: "123",
@@ -384,6 +390,19 @@ test("source evidence HMAC is mandatory and tamper-evident", async () => {
   const tamperedState = makeEnv({ pending: [tampered] });
   const tamperedResponse = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([tampered.id], [tampered]), headers), tamperedState.env, ctx);
   assert.equal(tamperedResponse.status, 409);
+
+  for (const change of [
+    { rule: "A different rule text with the original source signature." },
+    { category: "tampered-category" },
+    { conditions: ["tampered condition"] },
+    { priority: 9 }
+  ]) {
+    const altered = { ...evidenceRule(), ...change };
+    const alteredState = makeEnv({ pending: [altered] });
+    const alteredResponse = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([altered.id], [altered]), headers), alteredState.env, ctx);
+    assert.equal(alteredResponse.status, 409);
+    assert.equal((await alteredState.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
+  }
 
   const wrongCapture = evidenceRule({ sourceCaptureMethod: "untrusted_import" });
   const wrongCaptureState = makeEnv({ pending: [wrongCapture] });
