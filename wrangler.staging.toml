@@ -24,5 +24,8 @@ binding = "MARKET_DB"
 database_name = "goldstar_market_research_staging"
 database_id = "e5978640-6035-41fe-8947-4e6fc58c5a92"
 
+[vars]
+MQL5_GATEWAY_URL = "https://mql5-readonly-v4-trading-research-agent-staging.goldstar-nsl83.workers.dev"
+
 [secrets]
-required = ["API_KEY", "L1_BRIDGE_KEY", "NDS_EVIDENCE_HMAC_KEY"]
+required = ["API_KEY", "L1_BRIDGE_KEY", "NDS_EVIDENCE_HMAC_KEY", "MQL5_GATEWAY_API_KEY"]
