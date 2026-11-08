@@ -83,7 +83,8 @@ const PREVIEW_HOSTS = new Set([
   "45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev"
 ]);
 function isAllowedPreviewHost(url) {
-  return PREVIEW_HOSTS.has(url.hostname);
+  return PREVIEW_HOSTS.has(url.hostname) ||
+    /^[a-f0-9]{8}-goldstar-trainer-staging\\.goldstar-nsl83\\.workers\\.dev$/i.test(url.hostname);
 }
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
