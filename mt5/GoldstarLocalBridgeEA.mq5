@@ -4,9 +4,9 @@
 
 input string BridgeUrl = "https://mt5-readonly-v5-trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/snapshot";
 input string BridgeKey = "";
-input int IntervalSeconds = 30;
-input int MaxPositions = 30;
-input int MaxSymbols = 30;
+input int IntervalSeconds = 60;
+input int MaxPositions = 20;
+input int MaxSymbols = 10;
 
 string BoolJson(const bool value) {
    return value ? "true" : "false";
