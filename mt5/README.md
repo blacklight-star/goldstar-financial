@@ -6,7 +6,7 @@ This Expert Advisor sends a periodic snapshot from a locally running MetaTrader 
 
 - No VPS, inbound port, public IP, APK, or Cloudflare Tunnel is required.
 - MT5 Desktop runs on the user's own Windows Surface. The PC and MT5 must remain powered on and connected for continuous updates.
-- The EA makes outbound HTTPS WebRequest calls every 30 seconds to the Cloudflare Worker.
+- The EA makes outbound HTTPS WebRequest calls every 60 seconds to the Cloudflare Worker.
 - The EA refuses to initialize unless the MT5 account mode is DEMO.
 - Only account metrics, open positions, and Market Watch bid/ask/last ticks are sent.
 - The Worker stores the snapshot in the isolated goldstar_market_research_staging D1 database.
@@ -19,7 +19,7 @@ This Expert Advisor sends a periodic snapshot from a locally running MetaTrader 
 3. In MT5, open Tools → Options → Expert Advisors and enable Allow WebRequest for listed URL.
 4. Add exactly: https://mt5-readonly-v5-trading-research-agent-staging.goldstar-nsl83.workers.dev
 5. Attach GoldstarLocalBridgeEA to one chart on the AMarkets DEMO account.
-6. In EA Inputs, paste the separately issued MT5_BRIDGE_KEY into BridgeKey; keep the 30-second interval.
+6. In EA Inputs, paste the separately issued MT5_BRIDGE_KEY into BridgeKey; keep the 60-second interval.
 7. Confirm the Experts tab reports “demo snapshot accepted”.
 
 ## Credential handling
