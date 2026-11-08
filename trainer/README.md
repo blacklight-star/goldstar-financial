@@ -1,35 +1,34 @@
 # Goldstar Trainer — Staging source mirror
 
-This folder contains a source-controlled mirror of the currently deployed `goldstar-trainer-staging` Worker, retrieved read-only from Cloudflare on 2026-11-06.
+This folder contains the source-controlled Trainer mirror derived from the Staging Worker and its immutable Preview candidates.
 
-## Change in this branch
+## NDS retrieval gate
 
-- Replaces the broad retrieval prefilter that treated generic ICT/SMC terms (Liquidity, Order Block, FVG, BOS, CHOCH, displacement, mitigation, entry, stop loss, etc.) as positive NDS signals.
-- Requires an explicit NDS anchor or at least three NDS structural terms.
-- Retains the 120-character minimum text threshold.
-- Adds Node tests for English, Persian, short-title, generic ICT/SMC, and mixed-methodology examples.
+- The retrieval filter requires at least 120 characters.
+- It accepts explicit NDS anchors (the full methodology name, 123Flag, or the distinctive Hook-Hook-Rally sequence).
+- Without an explicit anchor, it requires at least two distinct, sentence-local NDS structural relationships (for example Hook↔Node, Hook→Rally, Rally→Flag, Flag↔Lip, or Node hierarchy/priority).
+- Mere co-occurrence of generic terms such as nodes, flags, rally, sequence, fractal, or symmetry is rejected.
+- Persian text is Unicode-normalized before relationship evaluation.
+- This remains a retrieval prefilter; it does not establish correctness, source authority, validation, approval, or promotion.
 
-## Authority and safety boundaries
+## Source evidence and approval boundary
 
-- This classifier is only a **retrieval prefilter**. It does not validate a trading rule, establish source authority, or approve knowledge.
-- Extracted rules must retain exact source-post evidence and remain pending for independent review.
-- NDS remains the sole training methodology until the Technical Analysis Unit demonstrates full NDS mastery. ICT and other methodologies remain blocked until that gate is passed.
-- This branch is source-control and test work only. It does not upload a Worker version, deploy, change Cron, mutate KV/D1, or change secrets.
-- The current Staging Worker admin routes require `GOLDSTAR_BRIDGE_SECRET`; that binding was not present in the inspected Staging settings. This mirror does not add or alter secrets.
+- Each extracted rule candidate must preserve the Telegram post ID, canonical URL, exact verbatim excerpt, excerpt hash, full-post content hash, capture method, and verification flag.
+- The Trainer signs the exact rule content and provenance with HMAC. Financial L2 must independently verify the signature before a rule becomes approval-eligible.
+- Extracted rules remain pending. Retrieval, AI extraction, evidence signing, and independent L1 approval are distinct stages.
+- NDS remains the only permitted training methodology until the Technical Analysis Unit demonstrates full NDS mastery. ICT, RTM, and other methods remain blocked.
 
-## Provenance
+## Preview safety
 
-Baseline: Cloudflare Worker `goldstar-trainer-staging`, deployed version 9. No Production Worker source or Production data was changed.
+- `/__preview/dry-run`, `/__preview/parser-selftest`, and `/__preview/source-diagnostics` are fetch-only diagnostics. They must never call Workers AI or write KV/D1.
+- The immutable Preview hostname for Candidate V17 is `https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev`.
+- Preview host allowlisting is explicit. Labels/aliases are not assumed to create DNS routes.
+- The Staging Cron remains paused. There is no automatic training run.
+- Authenticated admin execution requires the Staging-only `GOLDSTAR_BRIDGE_SECRET`. No secret values belong in Git, KV, D1, logs, or chat.
 
+## Staging resources
 
-## Preview route safety correction
-
-- The unauthenticated `/__preview/dry-run` route is fetch-only. It can inspect public Telegram HTML but cannot invoke Workers AI or write KV, preventing anonymous AI-budget consumption.
-- AI-backed extraction remains available only through the scheduled trainer path or authenticated admin route.
-
-
-## Signed evidence requirement
-
-- Each new pending trading-rule record must include a SHA-256 HMAC signature over its exact source-post identity, excerpt hash, full-post content hash, capture method, and verification flag.
-- The secret `NDS_EVIDENCE_HMAC_KEY` must be configured on both this Trainer Worker and Financial L2. If it is missing, scheduled training fails closed before Telegram retrieval, AI inference, or candidate persistence.
-- The same secret must never be exposed to clients or stored in KV/D1. Configure it as a Cloudflare Worker secret only.
+- Staging D1: `goldstar_nds_staging`.
+- Staging KV binding ID: `77b13f4018e3465ebd5e754482d3c5a2`.
+- HMAC signing key binding: `NDS_EVIDENCE_HMAC_KEY`.
+- This source branch changes only code, tests, and documentation. It does not upload/deploy a Worker version, activate Cron, mutate KV/D1 data, change secrets, approve rules, or alter Production.
