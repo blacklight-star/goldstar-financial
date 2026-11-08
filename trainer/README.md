@@ -36,25 +36,19 @@ This folder contains the source-controlled Trainer mirror derived from the Stagi
 
 ## Live source-readiness result (2026-11-09)
 
-The latest live run confirmed the reliability and HMAC gates, but **source readiness is still blocked**:
+The latest Preview CI confirms:
+- Trainer V26 health and parser self-test passed.
+- Trainer/L2 fixed-fixture HMAC parity passed between Trainer V26 and Financial L2 V35.
+- Trainer unit tests: 28/28 passed.
+- Financial L2 unit tests: 75/75 passed.
+- Six TG.ME post pages were retrieved and their individual IDs/canonical Telegram links and captions were matched. All six exposed **zero** video tags, source tags, or direct media URLs in the fetched HTML; this is therefore a metadata index, not lesson-content intake.
+- The strict official Telegram source gate still fails as intended: NDS4ALLVIDEOS returned 20 posts; FuzzyLogic_NDS, BNJ1I, and cottagends returned zero parsed posts. One diagnostic-only source returned 3 posts, but diagnostic-only sources cannot substitute for configured official sources.
 
-| Configured source | Live public retrieval | Result |
-|---|---:|---|
-| NDS4ALLVIDEOS | 20 posts | Retrieved |
-| FuzzyLogic_NDS | 0 posts | Telegram redirects from the public archive route to the channel page |
-| BNJ1I | 0 posts | Telegram redirects from the public archive route to the channel page |
-| cottagends | 0 posts | Telegram redirects from the public archive route to the channel page |
+CI run:
+- [Trainer V26 source gate](https://github.com/blacklight-star/goldstar-financial/actions/runs/42533383964) — unit tests and health/parser/HMAC/TG.ME metadata checks passed; final strict configured-source gate remains red because three official Telegram archives are unavailable.
+- [Financial L2 V35 CI](https://github.com/blacklight-star/goldstar-financial/actions/runs/42533340596) — 75/75 tests and all immutable Preview health checks passed.
 
-The four remaining diagnostic-only channels are reported separately; one of them returned 3 posts. They are not silently substituted for the configured sources. A successful HTTP 200 response without Telegram post wrappers is not counted as source retrieval.
-
-Latest verified technical results:
-- Trainer unit tests: 24/24 passed.
-- L2 unit tests: 73/73 passed.
-- Cross-Worker HMAC parity: passed between Trainer V23 and Financial L2 V32 using the fixed Preview fixture.
-- Trainer health and parser self-test: passed.
-- No AI calls, KV/D1 writes, Cron changes, approvals, active deployments, or Production changes.
-
-Do not remove the strict source gate to make CI green. Source replacement or alternate ingestion must be explicitly authorized and provenance-labelled.
+No AI calls, KV/D1 writes, training, approvals, Cron changes, active deployments, or Production changes were performed. Trainer Staging Cron remains empty; Trainer Staging active deployment remains V9; L2 active deployment remains the pre-existing version. All new Worker versions are Preview-only.
 
 ## Independent NDS source registry (2026-11-09)
 
