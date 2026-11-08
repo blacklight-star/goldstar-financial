@@ -936,3 +936,46 @@ test("staging Wrangler config cannot target Production or enable a Cron", async 
   assert.doesNotMatch(config, /mql5-readonly-v4/);
   assert.doesNotMatch(config, /crons\s*=/i);
 });
+
+
+test("Preview-only HMAC interoperability route verifies the fixed Trainer fixture without exposing secrets", async () => {
+  const state = makeEnv();
+  const sample = {
+    id: "nds-preview-hmac-parity-v1",
+    validationStatus: "pending",
+    contentType: "trading_rule",
+    category: "cycle",
+    rule: "Preview sample: Hook precedes Rally; Flag follows Rally.",
+    conditions: ["Hook precedes Rally", "Rally precedes Flag"],
+    priority: 5,
+    sourcePostId: "987654321",
+    sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/987654321",
+    sourceExcerpt: "Preview-only NDS HMAC parity fixture: Hook precedes Rally, and the Flag follows the Rally.",
+    sourceExcerptHash: createHash("sha256").update("Preview-only NDS HMAC parity fixture: Hook precedes Rally, and the Flag follows the Rally.").digest("hex"),
+    sourcePostContentHash: createHash("sha256").update("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction.").digest("hex"),
+    sourceCaptureMethod: "telegram_public_post_html",
+    sourceExcerptVerified: true
+  };
+  const signature = createHmac("sha256", TEST_NDS_EVIDENCE_KEY)
+    .update(JSON.stringify(sourceEvidencePayloadForTest(sample))).digest("hex");
+  const previewRequest = signatureValue => new Request(
+    "https://deadbeef-goldstar-financial-v3.goldstar-nsl83.workers.dev/__preview/hmac-verify",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signature: signatureValue })
+    }
+  );
+  const valid = await worker.fetch(previewRequest(signature), state.env, ctx);
+  assert.equal(valid.status, 200);
+  assert.deepEqual(await valid.json(), { ok: true, signatureValid: true });
+
+  const invalid = await worker.fetch(previewRequest("0".repeat(64)), state.env, ctx);
+  assert.equal(invalid.status, 200);
+  assert.deepEqual(await invalid.json(), { ok: true, signatureValid: false });
+
+  const blocked = await worker.fetch(makeRequest("/__preview/hmac-verify", { signature }), state.env, ctx);
+  assert.equal(blocked.status, 404);
+  assert.equal(state.DB.rows.size, 0);
+  assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS_pending"), JSON.stringify([]));
+});
