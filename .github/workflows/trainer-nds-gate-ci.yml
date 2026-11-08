@@ -74,7 +74,7 @@ jobs:
             if (data.ok !== true || data.dryRun !== true || data.persisted !== false || data.aiCalled !== false ||
                 !item || item.success !== true || item.textLength < 1200 ||
                 item.sourceOriginType !== "author_linked_independent_platform" ||
-                item.sourceCaptureMethod !== "academia_author_published_document_html' ||
+                item.sourceCaptureMethod !== "academia_author_published_document_html" ||
                 !/^[a-f0-9]{64}$/.test(item.contentHash || "")) {
               console.error("Trainer V24 author-linked Academia source check failed:", JSON.stringify(data, null, 2));
               process.exit(1);
