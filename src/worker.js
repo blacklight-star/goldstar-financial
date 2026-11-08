@@ -273,7 +273,9 @@ export default {
 
       if (path === "/training/progress") {
         var k2 = await getRules(env);
-        return ok({ ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length, approvedTotal: k2.all.length, legacy: k2.legacy, pendingNDS: (function(value) { return value === null ? 0 : (Array.isArray(value) ? value.length : -1); })(await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })) });
+        var pendingProgress = await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" });
+        if (pendingProgress !== null && !Array.isArray(pendingProgress)) return err("Pending NDS store has invalid shape", 500);
+        return ok({ ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length, approvedTotal: k2.all.length, legacy: k2.legacy, pendingNDS: pendingProgress === null ? 0 : pendingProgress.length });
       }
 
       if (path === "/training/pending" && method === "GET") {
