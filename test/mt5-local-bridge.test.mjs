@@ -1,3 +1,12 @@
+
+import { readFile } from "node:fs/promises";
+
+test("MT5 EA is pinned to the immutable V5 preview URL", async () => {
+  const source = await readFile(new URL("../mt5/GoldstarLocalBridgeEA.mq5", import.meta.url), "utf8");
+  assert.match(source, /https:\/\/05931c07-trading-research-agent-staging\.goldstar-nsl83\.workers\.dev\/mt5\/snapshot/);
+  assert.doesNotMatch(source, /mt5-readonly-v5-trading-research-agent-staging/);
+});
+
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../workers/trading-research-agent/src/worker.js";
