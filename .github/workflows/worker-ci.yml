@@ -3,9 +3,11 @@ on:
   push:
     branches:
       - fix/mql5-gateway-client-auth
+      - feat/mt5-local-readonly-bridge
   pull_request:
     branches:
       - main
+      - fix/mql5-gateway-client-auth
 jobs:
   test:
     runs-on: ubuntu-latest
