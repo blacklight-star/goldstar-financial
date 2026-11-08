@@ -20,3 +20,9 @@ This folder contains a source-controlled mirror of the currently deployed `golds
 ## Provenance
 
 Baseline: Cloudflare Worker `goldstar-trainer-staging`, deployed version 9. No Production Worker source or Production data was changed.
+
+
+## Preview route safety correction
+
+- The unauthenticated `/__preview/dry-run` route is fetch-only. It can inspect public Telegram HTML but cannot invoke Workers AI or write KV, preventing anonymous AI-budget consumption.
+- AI-backed extraction remains available only through the scheduled trainer path or authenticated admin route.
