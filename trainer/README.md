@@ -21,7 +21,7 @@ This folder contains the source-controlled Trainer mirror derived from the Stagi
 ## Preview safety
 
 - `/__preview/dry-run`, `/__preview/parser-selftest`, and `/__preview/source-diagnostics` are fetch-only diagnostics. They must never call Workers AI or write KV/D1.
-- Candidate V17 uses `https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev`. Future immutable versions are accepted only when the hostname matches the exact eight-hex-prefix Trainer Staging pattern.
+- Candidate V17 used `https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev`. Current source candidate V18 is `https://26d6a4fb-goldstar-trainer-staging.goldstar-nsl83.workers.dev`; the workflow checks its health, parser self-test, and fetch-only Telegram dry-run. Future immutable versions are accepted only when the hostname matches the exact eight-hex-prefix Trainer Staging pattern.
 - Preview host allowlisting is explicit. Labels/aliases are not assumed to create DNS routes.
 - The Staging Cron remains paused. There is no automatic training run.
 - Authenticated admin execution requires the Staging-only `GOLDSTAR_BRIDGE_SECRET`. No secret values belong in Git, KV, D1, logs, or chat.
@@ -31,4 +31,4 @@ This folder contains the source-controlled Trainer mirror derived from the Stagi
 - Staging D1: `goldstar_nds_staging`.
 - Staging KV binding ID: `77b13f4018e3465ebd5e754482d3c5a2`.
 - HMAC signing key binding: `NDS_EVIDENCE_HMAC_KEY`.
-- This source branch changes only code, tests, and documentation. It does not upload/deploy a Worker version, activate Cron, mutate KV/D1 data, change secrets, approve rules, or alter Production.
+- This source branch changes code, tests, and documentation. Candidate V18 was uploaded as an immutable Preview version only; it was not deployed. No Cron was activated, no KV/D1 data was mutated, no secrets were changed, no rules were approved, and Production was not altered.
