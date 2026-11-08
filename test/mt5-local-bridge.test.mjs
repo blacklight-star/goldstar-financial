@@ -18,7 +18,7 @@ const account={
 const positions=[{ticket:"987654321",symbol:"EURUSD",type:"BUY",volume:0.1,price_open:1.08,price_current:1.081,stop_loss:1.07,take_profit:1.09,profit:1,swap:0,opened_at:"2026.11.08 09:00:00"}];
 const ticks=[{symbol:"EURUSD",bid:1.0809,ask:1.081,last:1.08095,time_msc:1794128400000}];
 function post(body,key="demo-bridge-secret") {
-  return new Request("https://mt5-bridge.example/v1/snapshot",{
+  return new Request("https://mt5-bridge.example/mt5/snapshot",{
     method:"POST",
     headers:{"content-type":"application/json","x-goldstar-mt5-key":key},
     body:JSON.stringify(body)
@@ -78,7 +78,7 @@ test("invalid position and tick records are rejected before any database write",
 
 test("snapshot request size is bounded and missing storage fails closed",async()=>{
   const {env}=makeEnv();
-  const large=new Request("https://mt5-bridge.example/v1/snapshot",{
+  const large=new Request("https://mt5-bridge.example/mt5/snapshot",{
     method:"POST",headers:{"content-type":"application/json","x-goldstar-mt5-key":"demo-bridge-secret"},
     body:JSON.stringify({account,positions,ticks,padding:"x".repeat(70000)})
   });
