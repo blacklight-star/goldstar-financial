@@ -108,13 +108,14 @@ function makeDb(options = {}) {
   };
 }
 
-function makeEnv({ pending = [], active = [], strategy = null, withDb = true, dbOptions = {}, kvOptions = {}, strategyKvOptions = {} } = {}) {
+function makeEnv({ pending = [], active = [], strategy = null, withDb = true, withMarketDb = true, dbOptions = {}, kvOptions = {}, strategyKvOptions = {} } = {}) {
   const KNOWLEDGE = makeKv({
     knowledge_NDS_pending: pending,
     knowledge_NDS: active
   }, kvOptions);
   const STRATEGY = makeKv(strategy === null ? {} : { current_strategy: strategy }, strategyKvOptions);
   const DB = withDb ? makeDb(dbOptions) : undefined;
+  const MARKET_DB = withMarketDb ? makeDb(dbOptions) : undefined;
   return {
     env: {
       API_KEY: "general-api-key",
@@ -122,6 +123,7 @@ function makeEnv({ pending = [], active = [], strategy = null, withDb = true, db
       KNOWLEDGE,
       STRATEGY,
       DB,
+      MARKET_DB,
       AI: {
         calls: 0,
         async run() {
@@ -132,7 +134,8 @@ function makeEnv({ pending = [], active = [], strategy = null, withDb = true, db
     },
     KNOWLEDGE,
     STRATEGY,
-    DB
+    DB,
+    MARKET_DB
   };
 }
 
@@ -417,7 +420,7 @@ test("market-data status reads raw and normalized D1 counts but remains fail-clo
 
 test("market-data latest returns parsed raw TradingView events with bounded filters", async () => {
   const state = makeEnv();
-  state.DB.events.push({
+  state.MARKET_DB.events.push({
     id: "event-1",
     event_hash: "hash-1",
     received_at: "2026-11-04T10:00:00.000Z",
@@ -436,15 +439,27 @@ test("market-data latest returns parsed raw TradingView events with bounded filt
   assert.equal(result.count, 1);
   assert.equal(result.events[0].payload.signal, "breakout");
   assert.equal("payload_json" in result.events[0], false);
-  assert.deepEqual(state.DB.queries.at(-1).args, ["eurusd", "eurusd", "15", "15", 10]);
+  assert.deepEqual(state.MARKET_DB.queries.at(-1).args, ["eurusd", "eurusd", "15", "15", 10]);
 });
 
-test("market-data routes fail closed when D1 is not bound", async () => {
-  const state = makeEnv({ withDb: false });
+test("market-data routes fail closed when dedicated MARKET_DB is not bound, even if the NDS DB exists", async () => {
+  const state = makeEnv({ withMarketDb: false, withDb: true });
   const response = await worker.fetch(makeRequest("/market-data/status", undefined, {
     "X-API-Key": "general-api-key"
   }), state.env, ctx);
   assert.equal(response.status, 503);
+  const latest = await worker.fetch(makeRequest("/market-data/latest", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(latest.status, 503);
+});
+
+test("market-data routes do not depend on the NDS/audit DB when MARKET_DB is explicitly bound", async () => {
+  const state = makeEnv({ withDb: false, withMarketDb: true });
+  const response = await worker.fetch(makeRequest("/market-data/status", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
 });
 
 test("market analysis remains disabled even when the read-only event store is bound", async () => {
