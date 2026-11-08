@@ -135,6 +135,11 @@ async function reserveAiBudget(env, prompt, maxTokens) {
   if (!reserved) throw new Error("AI daily safety budget reached; inference skipped to prevent overage");
   return { estimatedNeurons, reservedNeurons: reserved.reserved_neurons, dailyLimitNeurons: AI_DAILY_BUDGET_NEURONS };
 }
+const KNOWLEDGE_WRITE_LOCK_LEASE_MS = 10 * 60 * 1000;
+const KNOWLEDGE_COMMIT_JOURNAL_KEY = "trainer:commit_journal";
+const MAX_KNOWLEDGE_JOURNAL_BYTES = 1024 * 1024;
+const MAX_DEFERRED_RETRIES = 5;
+
 async function acquireKnowledgeWriteLock(env, ownerToken) {
   if (!env.DB || typeof env.DB.prepare !== "function") throw new Error("Atomic D1 knowledge lock binding unavailable");
   const now = Date.now();
@@ -142,9 +147,112 @@ async function acquireKnowledgeWriteLock(env, ownerToken) {
     "INSERT INTO gs_worker_locks (lock_name, owner_token, lease_until_ms, updated_at) VALUES (?, ?, ?, ?) " +
     "ON CONFLICT(lock_name) DO UPDATE SET owner_token = excluded.owner_token, lease_until_ms = excluded.lease_until_ms, updated_at = excluded.updated_at " +
     "WHERE gs_worker_locks.lease_until_ms <= ? RETURNING owner_token"
-  ).bind("knowledge-write", ownerToken, now + 10 * 60 * 1000, new Date(now).toISOString(), now).first();
+  ).bind("knowledge-write", ownerToken, now + KNOWLEDGE_WRITE_LOCK_LEASE_MS, new Date(now).toISOString(), now).first();
   return !!row && row.owner_token === ownerToken;
 }
+
+export async function renewKnowledgeWriteLock(env, ownerToken) {
+  if (!env.DB || typeof env.DB.prepare !== "function") throw new Error("Atomic D1 knowledge lock binding unavailable");
+  const now = Date.now();
+  const row = await env.DB.prepare(
+    "UPDATE gs_worker_locks SET lease_until_ms = ?, updated_at = ? " +
+    "WHERE lock_name = ? AND owner_token = ? AND lease_until_ms > ? RETURNING owner_token"
+  ).bind(now + KNOWLEDGE_WRITE_LOCK_LEASE_MS, new Date(now).toISOString(), "knowledge-write", ownerToken, now).first();
+  if (!row || row.owner_token !== ownerToken) {
+    throw new Error("Knowledge write lease expired or ownership was lost; refusing further writes");
+  }
+  return true;
+}
+
+const JOURNAL_ALLOWED_KEY = key =>
+  key === "knowledge_NDS_pending" ||
+  key === "trainer:last_seen:NDS4ALLVIDEOS" ||
+  key === "trainer:last_seen:FuzzyLogic_NDS" ||
+  key === "trainer:last_seen:BNJ1I" ||
+  key === "trainer:last_seen:cottagends" ||
+  /^trainer:(post_hashes|deferred_posts):[A-Za-z0-9_]+$/.test(key) ||
+  key === "trainer:last_run";
+
+export async function recoverPendingKnowledgeCommit(env, ownerToken) {
+  const raw = await env.KNOWLEDGE.get(KNOWLEDGE_COMMIT_JOURNAL_KEY);
+  if (raw === null) return false;
+  let journal;
+  try { journal = JSON.parse(raw); }
+  catch { throw new Error("Knowledge commit journal is invalid JSON; refusing further processing"); }
+  if (!journal || journal.version !== 1 || !Array.isArray(journal.writes) || journal.writes.length > 100) {
+    throw new Error("Knowledge commit journal has an invalid structure; refusing further processing");
+  }
+  const seen = new Set();
+  for (const item of journal.writes) {
+    if (!item || typeof item.key !== "string" || typeof item.value !== "string" ||
+        !JOURNAL_ALLOWED_KEY(item.key) || seen.has(item.key)) {
+      throw new Error("Knowledge commit journal contains an invalid or duplicate write; refusing replay");
+    }
+    seen.add(item.key);
+  }
+  await renewKnowledgeWriteLock(env, ownerToken);
+  for (const item of journal.writes) {
+    await renewKnowledgeWriteLock(env, ownerToken);
+    await env.KNOWLEDGE.put(item.key, item.value);
+  }
+  await renewKnowledgeWriteLock(env, ownerToken);
+  await env.KNOWLEDGE.delete(KNOWLEDGE_COMMIT_JOURNAL_KEY);
+  return true;
+}
+
+export async function persistKnowledgeCommit(env, ownerToken, writes) {
+  if (!Array.isArray(writes) || !writes.length) return false;
+  const seen = new Set();
+  for (const item of writes) {
+    if (!item || typeof item.key !== "string" || typeof item.value !== "string" ||
+        !JOURNAL_ALLOWED_KEY(item.key) || seen.has(item.key)) {
+      throw new Error("Knowledge commit contains an invalid or duplicate write");
+    }
+    seen.add(item.key);
+  }
+  const journal = JSON.stringify({ version: 1, createdAt: new Date().toISOString(), writes });
+  if (new TextEncoder().encode(journal).length > MAX_KNOWLEDGE_JOURNAL_BYTES) {
+    throw new Error("Knowledge commit journal exceeds the 1 MiB safety limit");
+  }
+  await renewKnowledgeWriteLock(env, ownerToken);
+  await env.KNOWLEDGE.put(KNOWLEDGE_COMMIT_JOURNAL_KEY, journal);
+  for (const item of writes) {
+    await renewKnowledgeWriteLock(env, ownerToken);
+    await env.KNOWLEDGE.put(item.key, item.value);
+  }
+  await renewKnowledgeWriteLock(env, ownerToken);
+  await env.KNOWLEDGE.delete(KNOWLEDGE_COMMIT_JOURNAL_KEY);
+  return true;
+}
+
+export function isDeferredRetryDue(item, nowMs = Date.now()) {
+  if (!item || typeof item !== "object") return false;
+  const retryCount = Number.isInteger(item.retryCount) ? item.retryCount : 0;
+  if (retryCount >= MAX_DEFERRED_RETRIES) return false;
+  const dueAt = Date.parse(item.nextRetryAt || item.recordedAt || "");
+  return !Number.isFinite(dueAt) || dueAt <= nowMs;
+}
+
+export function buildDeferredRecord(post, previous, nowMs = Date.now()) {
+  const sameContent = !!previous && previous.contentHash === post.contentHash;
+  const retryCount = sameContent
+    ? Math.min(MAX_DEFERRED_RETRIES, (Number.isInteger(previous.retryCount) ? previous.retryCount : 0) + (post.deferredRetry ? 1 : 0))
+    : 0;
+  const delayMs = 24 * 60 * 60 * 1000 * (2 ** Math.min(retryCount, 4));
+  return {
+    sourcePostId: post.sourcePostId,
+    sourcePostUrl: post.sourcePostUrl,
+    contentHash: post.contentHash,
+    links: (post.links || []).slice(0, 10),
+    youtubeLinks: (post.youtubeLinks || []).slice(0, 5),
+    videoUrls: (post.videoUrls || []).slice(0, 5),
+    reason: post.text.trim().length < 120 ? "insufficient_text_or_video_transcript_missing" : "no_nds_signal",
+    retryCount,
+    recordedAt: new Date(nowMs).toISOString(),
+    nextRetryAt: new Date(nowMs + delayMs).toISOString()
+  };
+}
+
 async function releaseKnowledgeWriteLock(env, ownerToken) {
   await env.DB.prepare("DELETE FROM gs_worker_locks WHERE lock_name = ? AND owner_token = ?").bind("knowledge-write", ownerToken).run();
 }
@@ -410,6 +518,8 @@ async function runScheduledTraining(env) {
     learningSuccess: false
   };
   try {
+    await recoverPendingKnowledgeCommit(env, lockOwner);
+    await renewKnowledgeWriteLock(env, lockOwner);
     const rawExisting = await env.KNOWLEDGE.get("knowledge_NDS");
     const rawPending = await env.KNOWLEDGE.get("knowledge_NDS_pending");
     let existing = [];
@@ -434,7 +544,9 @@ async function runScheduledTraining(env) {
     for (const channel of CHANNELS) {
       let aiCallStarted = false;
       try {
+        await renewKnowledgeWriteLock(env, lockOwner);
         const page = await readChannel(env, channel);
+        await renewKnowledgeWriteLock(env, lockOwner);
         const markerKey = "trainer:last_seen:" + channel.name;
         const previousMarker = await env.KNOWLEDGE.get(markerKey);
         if (page.marker && page.marker !== previousMarker) markers.push({ key: markerKey, value: page.marker });
@@ -448,6 +560,7 @@ async function runScheduledTraining(env) {
         const rawDeferred = await env.KNOWLEDGE.get(deferredKey);
         let hashMap = {};
         let deferredPosts = [];
+        const deferredById = new Map();
         if (rawHashMap !== null) {
           hashMap = JSON.parse(rawHashMap);
           if (!hashMap || typeof hashMap !== "object" || Array.isArray(hashMap)) throw new Error("Invalid per-post hash map for " + channel.name);
@@ -456,6 +569,9 @@ async function runScheduledTraining(env) {
           deferredPosts = JSON.parse(rawDeferred);
           if (!Array.isArray(deferredPosts)) throw new Error("Invalid deferred-post queue for " + channel.name);
         }
+        for (const item of deferredPosts) {
+          if (item && item.sourcePostId) deferredById.set(String(item.sourcePostId), item);
+        }
         const orderedPosts = page.posts.slice().sort((a, b) => Number(a.sourcePostId) - Number(b.sourcePostId));
         const changedPosts = [];
         for (const post of orderedPosts) {
@@ -463,7 +579,14 @@ async function runScheduledTraining(env) {
           if (!postId) continue;
           const postText = String(post.text || "");
           const contentHash = await sha256Hex(postText + "\nlinks:" + (post.links || []).join("\n") + "\nvideo:" + (post.videoUrls || []).join("\n"));
-          if (hashMap[postId] !== contentHash) changedPosts.push({ ...post, sourcePostId: postId, text: postText, contentHash: contentHash });
+          const previousDeferred = deferredById.get(postId);
+          const retryDue = previousDeferred && previousDeferred.contentHash === contentHash && isDeferredRetryDue(previousDeferred);
+          if (hashMap[postId] !== contentHash || retryDue) {
+            changedPosts.push({
+              ...post, sourcePostId: postId, text: postText, contentHash: contentHash,
+              deferredRetry: !!retryDue
+            });
+          }
         }
         if (!changedPosts.length) {
           summary.channels.push({ channel: channel.name, status: "unchanged", postCount: page.postIds.length, changedPosts: 0, eligiblePosts: 0 });
@@ -479,16 +602,7 @@ async function runScheduledTraining(env) {
         const eligibleIds = new Set(eligiblePosts.map(post => String(post.sourcePostId)));
         const ineligiblePosts = batch.filter(post => !eligibleIds.has(String(post.sourcePostId)));
         for (const post of ineligiblePosts) {
-          nextDeferred.push({
-            sourcePostId: post.sourcePostId,
-            sourcePostUrl: post.sourcePostUrl,
-            contentHash: post.contentHash,
-            links: (post.links || []).slice(0, 10),
-            youtubeLinks: (post.youtubeLinks || []).slice(0, 5),
-            videoUrls: (post.videoUrls || []).slice(0, 5),
-            reason: post.text.trim().length < 120 ? "insufficient_text_or_video_transcript_missing" : "no_nds_signal",
-            recordedAt: new Date().toISOString()
-          });
+          nextDeferred.push(buildDeferredRecord(post, deferredById.get(String(post.sourcePostId))));
         }
         nextDeferred = nextDeferred.slice(-100);
         const nextHashMap = {};
@@ -513,7 +627,9 @@ async function runScheduledTraining(env) {
         summary.totalEligiblePosts += eligiblePosts.length;
         summary.aiCalls += 1;
         aiCallStarted = true;
+        await renewKnowledgeWriteLock(env, lockOwner);
         const parsed = extractJSON(await runAI(env, prompt));
+        await renewKnowledgeWriteLock(env, lockOwner);
         const rules = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.rules) ? parsed.rules : null);
         if (!rules) throw new Error("AI output was not a JSON rules array");
         let addedForChannel = 0;
@@ -588,12 +704,6 @@ async function runScheduledTraining(env) {
         }
       }
     }
-    if (additions.length) {
-      await env.KNOWLEDGE.put("knowledge_NDS_pending", JSON.stringify(pending.concat(additions)));
-    }
-    for (const item of hashMapWrites) await env.KNOWLEDGE.put(item.key, item.value);
-    for (const item of deferredWrites) await env.KNOWLEDGE.put(item.key, item.value);
-    for (const marker of markers) await env.KNOWLEDGE.put(marker.key, marker.value);
     summary.newRules = additions.length;
     summary.pendingRules = pending.length + additions.length;
     summary.success = !summary.channels.some(channel => channel.status === "error");
@@ -602,6 +712,17 @@ async function runScheduledTraining(env) {
     const hasChannelErrors = summary.channels.some(channel => channel.status === "error");
     summary.learningStatus = additions.length > 0 ? (hasChannelErrors ? "partial_new_rules_added" : "new_rules_added") : hasChannelErrors ? "processing_errors" : summary.totalEligiblePosts > 0 ? "content_reviewed_no_new_rules" : summary.totalChangedPosts > 0 ? "new_posts_deferred_or_filtered" : "no_new_source_content";
     summary.finishedAt = new Date().toISOString();
+
+    const commitWrites = [];
+    if (additions.length) commitWrites.push({
+      key: "knowledge_NDS_pending",
+      value: JSON.stringify(pending.concat(additions))
+    });
+    for (const item of hashMapWrites) commitWrites.push(item);
+    for (const item of deferredWrites) commitWrites.push(item);
+    for (const marker of markers) commitWrites.push(marker);
+    await persistKnowledgeCommit(env, lockOwner, commitWrites);
+    await renewKnowledgeWriteLock(env, lockOwner);
     await env.KNOWLEDGE.put("trainer:last_run", JSON.stringify(summary));
     return summary;
   } catch (error) {
