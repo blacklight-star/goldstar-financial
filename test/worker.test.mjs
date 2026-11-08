@@ -1025,7 +1025,7 @@ test("allowlisted author-linked Academia document can be approval-eligible but o
 });
 
 
-test("allowlisted TG.ME NDS archive posts preserve third-party origin and canonical Telegram identity", async () => {
+test("TG.ME metadata-only archive posts remain ineligible until lesson media or transcript is verified", async () => {
   const archived = evidenceRule({
     id: "tgme-nds-session-65",
     sourcePostId: "983",
@@ -1034,31 +1034,13 @@ test("allowlisted TG.ME NDS archive posts preserve third-party origin and canoni
     sourceCaptureMethod: "tgme_public_post_html",
     sourceOriginType: "third_party_telegram_archive"
   });
-  const unknownPost = evidenceRule({
-    id: "tgme-unknown-post",
-    sourcePostId: "984",
-    sourcePostUrl: "https://t.me/fuzzylogic_nds/984",
-    sourceArchiveUrl: "https://tg.me/fuzzylogic_nds/984",
-    sourceCaptureMethod: "tgme_public_post_html",
-    sourceOriginType: "third_party_telegram_archive"
-  });
-  const mismatchedArchive = evidenceRule({
-    id: "tgme-mismatched-archive",
-    sourcePostId: "983",
-    sourcePostUrl: "https://t.me/fuzzylogic_nds/983",
-    sourceArchiveUrl: "https://tg.me/fuzzylogic_nds/984",
-    sourceCaptureMethod: "tgme_public_post_html",
-    sourceOriginType: "third_party_telegram_archive"
-  });
-  const state = makeEnv({ pending: [archived, unknownPost, mismatchedArchive] });
+  const state = makeEnv({ pending: [archived] });
   const response = await worker.fetch(makeRequest("/training/pending", undefined, {
     "X-API-Key": "general-api-key"
   }), state.env, ctx);
   assert.equal(response.status, 200);
   const result = await response.json();
-  assert.equal(result.totalPendingEntries, 3);
-  assert.equal(result.approvalEligibleCount, 1);
-  assert.equal(result.rules.find(rule => rule.id === "tgme-nds-session-65").approvalEligible, true);
-  assert.equal(result.rules.find(rule => rule.id === "tgme-unknown-post").approvalEligible, false);
-  assert.equal(result.rules.find(rule => rule.id === "tgme-mismatched-archive").approvalEligible, false);
+  assert.equal(result.totalPendingEntries, 1);
+  assert.equal(result.approvalEligibleCount, 0);
+  assert.equal(result.rules[0].approvalEligible, false);
 });
