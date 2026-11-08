@@ -227,6 +227,8 @@ function sourceEvidencePayload(rule) {
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
     sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
   };
+  if (rule.sourceDocumentFormat) payload.sourceDocumentFormat = String(rule.sourceDocumentFormat);
+  if (rule.sourceDocumentSha256) payload.sourceDocumentSha256 = String(rule.sourceDocumentSha256).toLowerCase();
   if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
   payload.sourceExcerptVerified = rule.sourceExcerptVerified === true;
   return payload;
@@ -269,7 +271,7 @@ async function hasVerifiedRuleEvidence(rule, env) {
           authorDoc.sourceOriginType !== originType ||
           authorDoc.sourceCaptureMethod !== captureMethod) return false;
       if (String(rule.sourceDocumentFormat || "") !== "application/pdf" ||
-          String(rule.sourceDocumentSha256 || "").toLowerCase() !== contentHash) return false;
+          !/^[a-f0-9]{64}$/.test(String(rule.sourceDocumentSha256 || "").toLowerCase())) return false;
     } else {
       return false;
     }
@@ -328,6 +330,8 @@ function financialRuleEvidencePayload(rule) {
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
     sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
   };
+  if (rule.sourceDocumentFormat) payload.sourceDocumentFormat = String(rule.sourceDocumentFormat);
+  if (rule.sourceDocumentSha256) payload.sourceDocumentSha256 = String(rule.sourceDocumentSha256).toLowerCase();
   if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
   payload.sourceEvidenceSignature = String(rule.sourceEvidenceSignature || "");
   payload.sourceExcerptVerified = rule.sourceExcerptVerified === true;
