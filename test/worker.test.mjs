@@ -124,10 +124,11 @@ function makeDb(options = {}) {
   };
 }
 
-function makeEnv({ pending = [], active = [], strategy = null, withDb = true, withMarketDb = true, dbOptions = {}, kvOptions = {}, strategyKvOptions = {} } = {}) {
+function makeEnv({ pending = [], active = [], otherKnowledge = {}, strategy = null, withDb = true, withMarketDb = true, dbOptions = {}, kvOptions = {}, strategyKvOptions = {} } = {}) {
   const KNOWLEDGE = makeKv({
     knowledge_NDS_pending: pending,
-    knowledge_NDS: active
+    knowledge_NDS: active,
+    ...otherKnowledge
   }, kvOptions);
   const STRATEGY = makeKv(strategy === null ? {} : { current_strategy: strategy }, strategyKvOptions);
   const DB = withDb ? makeDb(dbOptions) : undefined;
@@ -605,6 +606,30 @@ test("approval fails closed when the audit D1 binding is absent", async () => {
 
   assert.equal(response.status, 503);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
+});
+
+test("NDS-only mode excludes approved ICT and RTM rules from strategy synthesis", async () => {
+  const state = makeEnv({
+    otherKnowledge: {
+      knowledge_ICT: [{ id: "ict-approved-1", validationStatus: "approved", rule: "ICT rule" }],
+      knowledge_RTM: [{ id: "rtm-approved-1", validationStatus: "approved", rule: "RTM rule" }]
+    }
+  });
+  const response = await worker.fetch(makeRequest("/strategy/synthesize", {}, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 409);
+  assert.equal(state.env.AI.calls, 0);
+  const statusResponse = await worker.fetch(makeRequest("/status", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(statusResponse.status, 200);
+  const status = await statusResponse.json();
+  assert.equal(status.trainingMode, "NDS_ONLY");
+  assert.deepEqual(status.activeTrainingStyles, ["NDS"]);
+  assert.equal(status.ict, 1);
+  assert.equal(status.rtm, 1);
+  assert.equal(status.nds, 0);
 });
 
 test("duplicate NDS ingestion route is disabled to enforce a single writer", async () => {
