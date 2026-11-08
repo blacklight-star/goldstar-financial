@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import worker from "../src/worker.js";
 
-function makeKv(initial = {}, options = {}) {
+function makeKv(initial = {}, kvOptions = {}) {
   const values = new Map(Object.entries(initial).map(([key, value]) => [
     key,
     typeof value === "string" ? value : JSON.stringify(value)
@@ -12,12 +12,13 @@ function makeKv(initial = {}, options = {}) {
   return {
     values,
     async get(key, options = {}) {
+      if ((kvOptions.failGetKeys || []).includes(key)) throw new Error("simulated KV read failure");
       const value = values.get(key);
       if (value === undefined) return null;
       return options.type === "json" ? JSON.parse(value) : value;
     },
     async put(key, value) {
-      if ((options.failPutKeys || []).includes(key)) throw new Error("simulated KV write failure");
+      if ((kvOptions.failPutKeys || []).includes(key)) throw new Error("simulated KV write failure");
       values.set(key, String(value));
     }
   };
@@ -107,13 +108,14 @@ function makeDb(options = {}) {
   };
 }
 
-function makeEnv({ pending = [], active = [], strategy = null, withDb = true, dbOptions = {}, kvOptions = {} } = {}) {
+function makeEnv({ pending = [], active = [], strategy = null, withDb = true, withMarketDb = true, dbOptions = {}, kvOptions = {}, strategyKvOptions = {} } = {}) {
   const KNOWLEDGE = makeKv({
     knowledge_NDS_pending: pending,
     knowledge_NDS: active
   }, kvOptions);
-  const STRATEGY = makeKv(strategy === null ? {} : { current_strategy: strategy });
+  const STRATEGY = makeKv(strategy === null ? {} : { current_strategy: strategy }, strategyKvOptions);
   const DB = withDb ? makeDb(dbOptions) : undefined;
+  const MARKET_DB = withMarketDb ? makeDb(dbOptions) : undefined;
   return {
     env: {
       API_KEY: "general-api-key",
@@ -121,6 +123,7 @@ function makeEnv({ pending = [], active = [], strategy = null, withDb = true, db
       KNOWLEDGE,
       STRATEGY,
       DB,
+      MARKET_DB,
       AI: {
         calls: 0,
         async run() {
@@ -131,7 +134,8 @@ function makeEnv({ pending = [], active = [], strategy = null, withDb = true, db
     },
     KNOWLEDGE,
     STRATEGY,
-    DB
+    DB,
+    MARKET_DB
   };
 }
 
@@ -416,7 +420,7 @@ test("market-data status reads raw and normalized D1 counts but remains fail-clo
 
 test("market-data latest returns parsed raw TradingView events with bounded filters", async () => {
   const state = makeEnv();
-  state.DB.events.push({
+  state.MARKET_DB.events.push({
     id: "event-1",
     event_hash: "hash-1",
     received_at: "2026-11-04T10:00:00.000Z",
@@ -435,15 +439,27 @@ test("market-data latest returns parsed raw TradingView events with bounded filt
   assert.equal(result.count, 1);
   assert.equal(result.events[0].payload.signal, "breakout");
   assert.equal("payload_json" in result.events[0], false);
-  assert.deepEqual(state.DB.queries.at(-1).args, ["eurusd", "eurusd", "15", "15", 10]);
+  assert.deepEqual(state.MARKET_DB.queries.at(-1).args, ["eurusd", "eurusd", "15", "15", 10]);
 });
 
-test("market-data routes fail closed when D1 is not bound", async () => {
-  const state = makeEnv({ withDb: false });
+test("market-data routes fail closed when dedicated MARKET_DB is not bound, even if the NDS DB exists", async () => {
+  const state = makeEnv({ withMarketDb: false, withDb: true });
   const response = await worker.fetch(makeRequest("/market-data/status", undefined, {
     "X-API-Key": "general-api-key"
   }), state.env, ctx);
   assert.equal(response.status, 503);
+  const latest = await worker.fetch(makeRequest("/market-data/latest", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(latest.status, 503);
+});
+
+test("market-data routes do not depend on the NDS/audit DB when MARKET_DB is explicitly bound", async () => {
+  const state = makeEnv({ withDb: false, withMarketDb: true });
+  const response = await worker.fetch(makeRequest("/market-data/status", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
 });
 
 test("market analysis remains disabled even when the read-only event store is bound", async () => {
@@ -499,6 +515,42 @@ test("approval fails closed while another knowledge writer holds the shared lock
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
 });
 
+test("pending review excludes metadata placeholders and reports verified trading-rule eligibility", async () => {
+  const metadata = {
+    id: "metadata-1",
+    validationStatus: "pending",
+    category: "YouTube Uploads",
+    source: "https://t.me/s/NDS4ALLVIDEOS",
+    sourcePostIds: ["NDS4ALLVIDEOS/235"],
+    sourceExcerpt: "Channel-level content metadata, not a trading rule."
+  };
+  const validRule = evidenceRule({ id: "valid-rule-1" });
+  const unverifiedRule = evidenceRule({
+    id: "unverified-rule-1",
+    sourceExcerptVerified: false
+  });
+  const state = makeEnv({ pending: [metadata, validRule, unverifiedRule] });
+  const response = await worker.fetch(makeRequest("/training/pending", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.totalPendingEntries, 3);
+  assert.equal(result.excludedNonRuleCount, 1);
+  assert.equal(result.count, 2);
+  assert.equal(result.approvalEligibleCount, 1);
+  assert.equal(result.rules.find(rule => rule.id === "valid-rule-1").approvalEligible, true);
+  assert.equal(result.rules.find(rule => rule.id === "unverified-rule-1").approvalEligible, false);
+
+  const progressResponse = await worker.fetch(makeRequest("/training/progress", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  const progress = await progressResponse.json();
+  assert.equal(progress.pendingNDS, 2);
+  assert.equal(progress.pendingNDSNonRule, 1);
+  assert.equal(progress.pendingNDSApprovalEligible, 1);
+});
+
 test("missing pending KV key is treated as an empty queue, not a server error", async () => {
   const state = makeEnv();
   state.KNOWLEDGE.values.delete("knowledge_NDS_pending");
@@ -516,6 +568,38 @@ test("missing pending KV key is treated as an empty queue, not a server error", 
   assert.equal(progressResponse.status, 200);
   const progress = await progressResponse.json();
   assert.equal(progress.pendingNDS, 0);
+});
+
+test("knowledge KV read failures never masquerade as empty approved stores", async () => {
+  const state = makeEnv({ kvOptions: { failGetKeys: ["knowledge_NDS"] } });
+  const response = await worker.fetch(makeRequest("/status", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 500);
+});
+
+test("pending queue read failures return an error instead of an empty queue", async () => {
+  const state = makeEnv({ kvOptions: { failGetKeys: ["knowledge_NDS_pending"] } });
+  const response = await worker.fetch(makeRequest("/training/pending?limit=1", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 500);
+});
+
+test("training progress fails visibly when pending KV cannot be read", async () => {
+  const state = makeEnv({ kvOptions: { failGetKeys: ["knowledge_NDS_pending"] } });
+  const response = await worker.fetch(makeRequest("/training/progress", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 500);
+});
+
+test("strategy KV read failures are not reported as a missing or legacy strategy", async () => {
+  const state = makeEnv({ strategyKvOptions: { failGetKeys: ["current_strategy"] } });
+  const response = await worker.fetch(makeRequest("/status", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 500);
 });
 
 test("strategy synthesis reserves the shared daily AI budget before inference", async () => {
@@ -547,14 +631,16 @@ test("L2 has one disabled NDS writer and no Browser Run fallback", async () => {
   assert.equal(source.split('path === "/training/batch"').length - 1, 1);
 });
 
-test("migrations define the shared lock, AI budget, audit, and market-data tables", async () => {
+test("migrations define shared controls and isolate market-research event tables", async () => {
   const lockMigration = await readFile(new URL("../migrations/0002_shared_worker_lock.sql", import.meta.url), "utf8");
   const supportMigration = await readFile(new URL("../migrations/0003_staging_support_tables.sql", import.meta.url), "utf8");
+  const marketMigration = await readFile(new URL("../migrations/0004_market_research_events.sql", import.meta.url), "utf8");
   assert.match(lockMigration, /gs_worker_locks/);
   assert.match(lockMigration, /gs_ai_daily_budget/);
   assert.match(supportMigration, /gs_audit_log/);
-  assert.match(supportMigration, /tv_events/);
-  assert.match(supportMigration, /gs_market_events/);
+  assert.match(marketMigration, /CREATE TABLE IF NOT EXISTS tv_events/);
+  assert.match(marketMigration, /CREATE TABLE IF NOT EXISTS gs_market_events/);
+  assert.match(marketMigration, /goldstar_market_research_staging/);
 });
 
 test("staging Wrangler config cannot target Production or enable a Cron", async () => {

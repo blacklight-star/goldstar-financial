@@ -91,14 +91,17 @@ async function ai(env, prompt) {
 }
 
 async function getRules(env) {
+  // A missing key is a valid empty store; a KV read failure is not.
+  // Never turn an unavailable knowledge store into an apparently empty/healthy state.
   var results = await Promise.all([
-    env.KNOWLEDGE.get("knowledge_ICT", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; }),
-    env.KNOWLEDGE.get("knowledge_RTM", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; }),
-    env.KNOWLEDGE.get("knowledge_NDS", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; }),
+    env.KNOWLEDGE.get("knowledge_ICT", { type: "json", cacheTtl: KV_CACHE_TTL }),
+    env.KNOWLEDGE.get("knowledge_RTM", { type: "json", cacheTtl: KV_CACHE_TTL }),
+    env.KNOWLEDGE.get("knowledge_NDS", { type: "json", cacheTtl: KV_CACHE_TTL }),
   ]);
-  var i = results[0] || [];
-  var r = results[1] || [];
-  var n = results[2] || [];
+  var i = results[0] === null ? [] : results[0];
+  var r = results[1] === null ? [] : results[1];
+  var n = results[2] === null ? [] : results[2];
+  if (![i, r, n].every(Array.isArray)) throw new Error("Knowledge KV returned an invalid store shape");
   var approved = function(list) { return list.filter(function(rule) { return rule && rule.validationStatus === "approved"; }); };
   var ai = approved(i); var ar = approved(r); var an = approved(n);
   var legacy = { ict: i.length - ai.length, rtm: r.length - ar.length, nds: n.length - an.length };
@@ -248,7 +251,7 @@ export default {
 
       if (path === "/status") {
         var k = await getRules(env);
-        var strat = await env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL }).catch(function() { return null; });
+        var strat = await env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL });
         var strategyRecord = parseStrategyRecord(strat);
         var strategyReady = await isApprovedStrategy(strat, k.all);
         var strategyStatus = strategyReady ? "approved" : (strategyRecord ? (strategyRecord.status || "unapproved") : (strat ? "legacy_unverified" : "not_created"));
@@ -270,14 +273,39 @@ export default {
 
       if (path === "/training/progress") {
         var k2 = await getRules(env);
-        return ok({ ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length, approvedTotal: k2.all.length, legacy: k2.legacy, pendingNDS: ((await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" }).catch(function() { return null; })) || []).length });
+        var pendingProgress = await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" });
+        if (pendingProgress !== null && !Array.isArray(pendingProgress)) return err("Pending NDS store has invalid shape", 500);
+        var pendingEntries = pendingProgress === null ? [] : pendingProgress;
+        var pendingRuleEntries = pendingEntries.filter(function(rule) { return rule && rule.contentType === "trading_rule"; });
+        var pendingEligibility = await Promise.all(pendingRuleEntries.map(hasVerifiedRuleEvidence));
+        return ok({
+          ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length,
+          approvedTotal: k2.all.length, legacy: k2.legacy,
+          pendingNDS: pendingRuleEntries.length,
+          pendingNDSNonRule: pendingEntries.length - pendingRuleEntries.length,
+          pendingNDSApprovalEligible: pendingEligibility.filter(Boolean).length
+        });
       }
 
       if (path === "/training/pending" && method === "GET") {
-        var pendingRules = (await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return null; })) || [];
-        if (!Array.isArray(pendingRules)) return err("Pending NDS store has invalid shape", 500);
+        var pendingRaw = await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json", cacheTtl: KV_CACHE_TTL });
+        var pendingEntries = pendingRaw === null ? [] : pendingRaw;
+        if (!Array.isArray(pendingEntries)) return err("Pending NDS store has invalid shape", 500);
+        var pendingRuleEntries = pendingEntries.filter(function(rule) { return rule && rule.contentType === "trading_rule"; });
+        var pendingEligibility = await Promise.all(pendingRuleEntries.map(hasVerifiedRuleEvidence));
+        var reviewRules = pendingRuleEntries.map(function(rule, index) {
+          return Object.assign({}, rule, { approvalEligible: pendingEligibility[index] });
+        });
         var limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") || 10)));
-        return ok({ status: "pending_review", count: pendingRules.length, returned: Math.min(limit, pendingRules.length), rules: pendingRules.slice(0, limit) });
+        return ok({
+          status: "pending_review",
+          count: reviewRules.length,
+          totalPendingEntries: pendingEntries.length,
+          excludedNonRuleCount: pendingEntries.length - reviewRules.length,
+          approvalEligibleCount: pendingEligibility.filter(Boolean).length,
+          returned: Math.min(limit, reviewRules.length),
+          rules: reviewRules.slice(0, limit)
+        });
       }
 
       if (path === "/training/approve" && method === "POST" && !validBridge) return err("L1 bridge authorization required", 403);
@@ -462,10 +490,10 @@ export default {
       }
 
       if (path === "/market-data/status" && method === "GET") {
-        if (!env.DB || typeof env.DB.prepare !== "function") return err("Market-data D1 binding unavailable", 503);
+        if (!env.MARKET_DB || typeof env.MARKET_DB.prepare !== "function") return err("Dedicated market-data D1 binding unavailable", 503);
         try {
-          var rawStatus = await env.DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM tv_events").first();
-          var normalizedStatus = await env.DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM gs_market_events").first();
+          var rawStatus = await env.MARKET_DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM tv_events").first();
+          var normalizedStatus = await env.MARKET_DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM gs_market_events").first();
           var rawEventCount = Number(rawStatus && rawStatus.event_count || 0);
           var normalizedEventCount = Number(normalizedStatus && normalizedStatus.event_count || 0);
           return ok({
@@ -484,13 +512,13 @@ export default {
       }
 
       if (path === "/market-data/latest" && method === "GET") {
-        if (!env.DB || typeof env.DB.prepare !== "function") return err("Market-data D1 binding unavailable", 503);
+        if (!env.MARKET_DB || typeof env.MARKET_DB.prepare !== "function") return err("Dedicated market-data D1 binding unavailable", 503);
         var requestedLimit = Number(url.searchParams.get("limit") || 25);
         var marketLimit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, Math.floor(requestedLimit))) : 25;
         var marketSymbol = String(url.searchParams.get("symbol") || "").trim().slice(0, 100);
         var marketTimeframe = String(url.searchParams.get("timeframe") || "").trim().slice(0, 40);
         try {
-          var marketResult = await env.DB.prepare(
+          var marketResult = await env.MARKET_DB.prepare(
             "SELECT id, event_hash, received_at, symbol, exchange_name, timeframe, event_type, payload_json FROM tv_events WHERE (? = '' OR UPPER(symbol) = UPPER(?)) AND (? = '' OR UPPER(timeframe) = UPPER(?)) ORDER BY received_at DESC LIMIT ?"
           ).bind(marketSymbol, marketSymbol, marketTimeframe, marketTimeframe, marketLimit).all();
           var marketEvents = (marketResult && Array.isArray(marketResult.results) ? marketResult.results : []).map(function(row) {
