@@ -41,3 +41,10 @@ The CMC key cannot be recovered from the prior Worker Secret. The owner must ret
 - No Cron schedules are configured.
 - This service is Staging-only. The old `trading-research-agent` deployment and its Secrets remain unchanged.
 - `npm test` includes bootstrap replay, cross-origin rejection, and read-only GET tests.
+
+## Latest deployed Staging revision
+
+- Deployed Cloudflare Worker version: `0cd14975-c46f-496f-b403-c51f54da11f2`.
+- The bootstrap landing-page GET is read-only. The token is consumed only by the explicit same-origin POST `/bootstrap/activate`.
+- Body parsing is streamed and capped before JSON parsing.
+- The deployment retains the pre-existing `CREDENTIAL_VAULT_KEY` Secret and the two isolated D1 bindings. No market data or vault records were changed by this deployment.
