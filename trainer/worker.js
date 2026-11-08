@@ -53,7 +53,25 @@ export function isNdsRelevantText(value) {
     hasNdsRelatedPair(sentences, /\brall(?:y|ies)\b|رالی/u, /\bdrops?\b|دراپ/u),
     hasNdsRelatedPair(sentences, /\bnodes?\b|گره|نود/u, /\b(?:parent|child|priority|higher|lower|sub-?node)\b|والد|فرزند|اولویت/u)
   ];
-  return relationships.filter(Boolean).length >= 2;
+  if (relationships.filter(Boolean).length >= 2) return true;
+
+  // Preserve compact methodology summaries when the source explicitly names NDS
+  // and describes a broad set of its structural components.
+  const namedMethod =
+    /\bnds\b[\s\S]{0,45}\b(?:strategy|method|system|framework)\b|\b(?:strategy|method|system|framework)\b[\s\S]{0,45}\bnds\b|استراتژی[\s\S]{0,45}\bnds\b|روش[\s\S]{0,45}\bnds\b/u.test(text);
+  const componentFamilies = [
+    /\bnodes?\b|گره|نود/u,
+    /\bhooks?\b|هوک/u,
+    /\brall(?:y|ies)?\b|رالی/u,
+    /\bflags?\b|فلگ|لیپ/u,
+    /\bsequenc(?:e|ing)\b|توالی|سکانس/u,
+    /\bcycles?\b|چرخه|سایکل/u,
+    /\bfractals?\b|فراکتال/u,
+    /\bsymmetry\b|تقارن/u
+  ];
+  const componentCount = componentFamilies.filter(pattern => pattern.test(text)).length;
+  const structuralDescription = /\b(?:components?|elements?|structure|structural|building blocks)\b|اجزا|عناصر|ساختار|مولفه/u.test(text);
+  return namedMethod && componentCount >= 5 && structuralDescription;
 }
 
 // Immutable Preview URLs are version-specific; aliases are not DNS routes.
