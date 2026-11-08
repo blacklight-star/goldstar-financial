@@ -515,6 +515,42 @@ test("approval fails closed while another knowledge writer holds the shared lock
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
 });
 
+test("pending review excludes metadata placeholders and reports verified trading-rule eligibility", async () => {
+  const metadata = {
+    id: "metadata-1",
+    validationStatus: "pending",
+    category: "YouTube Uploads",
+    source: "https://t.me/s/NDS4ALLVIDEOS",
+    sourcePostIds: ["NDS4ALLVIDEOS/235"],
+    sourceExcerpt: "Channel-level content metadata, not a trading rule."
+  };
+  const validRule = evidenceRule({ id: "valid-rule-1" });
+  const unverifiedRule = evidenceRule({
+    id: "unverified-rule-1",
+    sourceExcerptVerified: false
+  });
+  const state = makeEnv({ pending: [metadata, validRule, unverifiedRule] });
+  const response = await worker.fetch(makeRequest("/training/pending", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.totalPendingEntries, 3);
+  assert.equal(result.excludedNonRuleCount, 1);
+  assert.equal(result.count, 2);
+  assert.equal(result.approvalEligibleCount, 1);
+  assert.equal(result.rules.find(rule => rule.id === "valid-rule-1").approvalEligible, true);
+  assert.equal(result.rules.find(rule => rule.id === "unverified-rule-1").approvalEligible, false);
+
+  const progressResponse = await worker.fetch(makeRequest("/training/progress", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  const progress = await progressResponse.json();
+  assert.equal(progress.pendingNDS, 2);
+  assert.equal(progress.pendingNDSNonRule, 1);
+  assert.equal(progress.pendingNDSApprovalEligible, 1);
+});
+
 test("missing pending KV key is treated as an empty queue, not a server error", async () => {
   const state = makeEnv();
   state.KNOWLEDGE.values.delete("knowledge_NDS_pending");
