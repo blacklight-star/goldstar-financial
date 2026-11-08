@@ -205,3 +205,14 @@ test("immutable V17 preview hostname serves parser and source diagnostics withou
     globalThis.fetch = originalFetch;
   }
 });
+
+test("only the Trainer immutable-version hostname pattern is accepted for future candidates", async () => {
+  const request = new Request("https://deadbeef-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/parser-selftest");
+  const response = await worker.fetch(request, {});
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.success, true);
+
+  const unrelated = await worker.fetch(new Request("https://deadbeef-other.goldstar-nsl83.workers.dev/__preview/parser-selftest"), {});
+  assert.equal(unrelated.status, 404);
+});
