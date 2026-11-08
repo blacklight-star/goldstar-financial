@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import worker from "../src/worker.js";
 
-function makeKv(initial = {}, options = {}) {
+function makeKv(initial = {}, kvOptions = {}) {
   const values = new Map(Object.entries(initial).map(([key, value]) => [
     key,
     typeof value === "string" ? value : JSON.stringify(value)
@@ -12,13 +12,13 @@ function makeKv(initial = {}, options = {}) {
   return {
     values,
     async get(key, options = {}) {
-      if ((options.failGetKeys || []).includes(key)) throw new Error("simulated KV read failure");
+      if ((kvOptions.failGetKeys || []).includes(key)) throw new Error("simulated KV read failure");
       const value = values.get(key);
       if (value === undefined) return null;
       return options.type === "json" ? JSON.parse(value) : value;
     },
     async put(key, value) {
-      if ((options.failPutKeys || []).includes(key)) throw new Error("simulated KV write failure");
+      if ((kvOptions.failPutKeys || []).includes(key)) throw new Error("simulated KV write failure");
       values.set(key, String(value));
     }
   };
