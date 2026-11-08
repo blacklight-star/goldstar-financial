@@ -188,8 +188,9 @@ async function hasVerifiedRuleEvidence(rule, env) {
     "raw", new TextEncoder().encode(env.NDS_EVIDENCE_HMAC_KEY),
     { name: "HMAC", hash: "SHA-256" }, false, ["verify"]
   );
-  var signatureBytes = new Uint8Array(signature.match(/.{2}/g).map(function(byte) { return parseInt(byte, 16); }));
-  return await crypto.subtle.verify("HMAC", key, signatureBytes, new TextEncoder().encode(JSON.stringify(sourceEvidencePayload(rule))));
+  var expectedSignature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(JSON.stringify(sourceEvidencePayload(rule))));
+  var expectedSignatureHex = Array.from(new Uint8Array(expectedSignature), function(byte) { return byte.toString(16).padStart(2, "0"); }).join("");
+  return constantTimeEqual(expectedSignatureHex, signature);
 }
 
 function parseJsonSafe(value) {
