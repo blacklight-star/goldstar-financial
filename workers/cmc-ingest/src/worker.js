@@ -88,14 +88,14 @@ async function handleQuotes(request, env) {
     return json({ ok: false, error: "method_not_allowed", allowed: ["POST"] }, 405);
   }
 
+  if (!env.INGEST_AUTH_TOKEN || !env.CMC_API_KEY || !env.MARKET_DB ||
+      typeof env.MARKET_DB.prepare !== "function" || typeof env.MARKET_DB.batch !== "function") {
+    return json({ ok: false, error: "service_not_configured" }, 503);
+  }
   const authorization = request.headers.get("authorization") || "";
   const suppliedToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-  if (!env.INGEST_AUTH_TOKEN || !constantTimeEqual(suppliedToken, env.INGEST_AUTH_TOKEN)) {
+  if (!constantTimeEqual(suppliedToken, env.INGEST_AUTH_TOKEN)) {
     return json({ ok: false, error: "unauthorized" }, 401);
-  }
-  if (!env.CMC_API_KEY || !env.MARKET_DB || typeof env.MARKET_DB.prepare !== "function" ||
-      typeof env.MARKET_DB.batch !== "function") {
-    return json({ ok: false, error: "service_not_configured" }, 503);
   }
 
   let input;
