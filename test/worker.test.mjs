@@ -171,6 +171,7 @@ function sourceEvidencePayloadForTest(rule) {
     priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : null,
     sourcePostId: String(rule.sourcePostId || ""),
     sourcePostUrl: String(rule.sourcePostUrl || ""),
+    ...(rule.sourceArchiveUrl ? { sourceArchiveUrl: String(rule.sourceArchiveUrl) } : {}),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
     sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
@@ -218,6 +219,7 @@ function approvalRulePayload(rule) {
     priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : null,
     sourcePostId: String(rule.sourcePostId || ""),
     sourcePostUrl: String(rule.sourcePostUrl || ""),
+    ...(rule.sourceArchiveUrl ? { sourceArchiveUrl: String(rule.sourceArchiveUrl) } : {}),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
     sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
@@ -1020,4 +1022,43 @@ test("allowlisted author-linked Academia document can be approval-eligible but o
   assert.equal(result.rules.find(rule => rule.id === "academia-nds-english-v1").approvalEligible, true);
   assert.equal(result.rules.find(rule => rule.id === "academia-unknown").approvalEligible, false);
   assert.equal(result.rules.find(rule => rule.id === "telemetr-mirror").approvalEligible, false);
+});
+
+
+test("allowlisted TG.ME NDS archive posts preserve third-party origin and canonical Telegram identity", async () => {
+  const archived = evidenceRule({
+    id: "tgme-nds-session-65",
+    sourcePostId: "983",
+    sourcePostUrl: "https://t.me/fuzzylogic_nds/983",
+    sourceArchiveUrl: "https://tg.me/fuzzylogic_nds/983",
+    sourceCaptureMethod: "tgme_public_post_html",
+    sourceOriginType: "third_party_telegram_archive"
+  });
+  const unknownPost = evidenceRule({
+    id: "tgme-unknown-post",
+    sourcePostId: "984",
+    sourcePostUrl: "https://t.me/fuzzylogic_nds/984",
+    sourceArchiveUrl: "https://tg.me/fuzzylogic_nds/984",
+    sourceCaptureMethod: "tgme_public_post_html",
+    sourceOriginType: "third_party_telegram_archive"
+  });
+  const mismatchedArchive = evidenceRule({
+    id: "tgme-mismatched-archive",
+    sourcePostId: "983",
+    sourcePostUrl: "https://t.me/fuzzylogic_nds/983",
+    sourceArchiveUrl: "https://tg.me/fuzzylogic_nds/984",
+    sourceCaptureMethod: "tgme_public_post_html",
+    sourceOriginType: "third_party_telegram_archive"
+  });
+  const state = makeEnv({ pending: [archived, unknownPost, mismatchedArchive] });
+  const response = await worker.fetch(makeRequest("/training/pending", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.totalPendingEntries, 3);
+  assert.equal(result.approvalEligibleCount, 1);
+  assert.equal(result.rules.find(rule => rule.id === "tgme-nds-session-65").approvalEligible, true);
+  assert.equal(result.rules.find(rule => rule.id === "tgme-unknown-post").approvalEligible, false);
+  assert.equal(result.rules.find(rule => rule.id === "tgme-mismatched-archive").approvalEligible, false);
 });
