@@ -893,11 +893,13 @@ test("migrations define shared controls and isolate market-research event tables
   const lockMigration = await readFile(new URL("../migrations/0002_shared_worker_lock.sql", import.meta.url), "utf8");
   const supportMigration = await readFile(new URL("../migrations/0003_staging_support_tables.sql", import.meta.url), "utf8");
   const marketMigration = await readFile(new URL("../migrations/0004_market_research_events.sql", import.meta.url), "utf8");
+  const cmcMigration = await readFile(new URL("../migrations/0007_coinmarketcap_quotes.sql", import.meta.url), "utf8");
   assert.match(lockMigration, /gs_worker_locks/);
   assert.match(lockMigration, /gs_ai_daily_budget/);
   assert.match(supportMigration, /gs_audit_log/);
   assert.match(marketMigration, /CREATE TABLE IF NOT EXISTS tv_events/);
-  assert.match(marketMigration, /CREATE TABLE IF NOT EXISTS cmc_quotes/);
+  assert.match(cmcMigration, /CREATE TABLE IF NOT EXISTS cmc_quotes/);
+  assert.match(cmcMigration, /CREATE TABLE IF NOT EXISTS cmc_ingestion_runs/);
   assert.match(marketMigration, /CREATE TABLE IF NOT EXISTS gs_market_events/);
   assert.match(marketMigration, /goldstar_market_research_staging/);
 });
