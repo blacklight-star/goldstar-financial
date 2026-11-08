@@ -626,8 +626,8 @@ export default {
       return json({
         ok: true,
         service: "goldstar-trainer",
-        mode: "scheduled-nds-ingestion",
-        scheduler: "isolated staging Cron every 15 minutes",
+        mode: "staging-nds-ingestion",
+        scheduler: "paused; no Cron triggers configured",
         integrations: ["Direct HTTPS fetch only", "Workers AI with 3,000-neuron daily cap", "Workers KV", "D1 atomic lock"]
       });
     }
