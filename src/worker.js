@@ -231,14 +231,14 @@ async function hasVerifiedRuleEvidence(rule, env) {
         (originType === "official_telegram_channel" || originType === "")) {
       // Empty origin type is accepted only for previously signed Telegram records.
       if (sourceUrl.hostname !== "t.me") return false;
-      var telegramMatch = sourceUrl.pathname.match(/^\\/s\\/([A-Za-z0-9_]+)\\/(\\d+)$/);
+      var telegramMatch = sourceUrl.pathname.match(/^\/s\/([A-Za-z0-9_]+)\/(\d+)$/);
       if (!telegramMatch || telegramMatch[2] !== sourcePostId) return false;
       if (!NDS_CHANNELS.some(function(channel) { return channel.name === telegramMatch[1]; })) return false;
     } else if (captureMethod === "academia_author_published_document_html" &&
         originType === "author_linked_independent_platform") {
       var authorDoc = NDS_AUTHOR_LINKED_DOCUMENTS.get(sourcePostId);
       if (!authorDoc || !["academia.edu", "www.academia.edu"].includes(sourceUrl.hostname) ||
-          sourceUrl.pathname.replace(/\\/$/, "") !== authorDoc.path ||
+          sourceUrl.pathname.replace(/\/$/, "") !== authorDoc.path ||
           authorDoc.sourceOriginType !== originType ||
           authorDoc.sourceCaptureMethod !== captureMethod) return false;
     } else {
