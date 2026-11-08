@@ -75,7 +75,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/health") {
       if (request.method !== "GET") return json({ ok: false, error: "method_not_allowed" }, 405);
-      return json({ ok: true, service: "trading-research-agent", account: "manager-level-2", purpose: "CMC market-data ingestion", cmc_configured: Boolean(env.CMC_API_KEY), ingest_auth_configured: Boolean(env.INGEST_AUTH_TOKEN), database_configured: Boolean(env.DB) });
+      return json({ ok: true, service: "trading-research-agent", account: "manager-level-2", purpose: "read-only financial data ingestion", cmc_configured: Boolean(env.CMC_API_KEY), ingest_auth_configured: Boolean(env.INGEST_AUTH_TOKEN), mql5_configured: Boolean(env.MQL5_MARKETDATA_API_KEY && env.MQL5_GATEWAY_API_KEY), mt5_demo_bridge_configured: Boolean(env.MT5_BRIDGE_KEY), database_configured: Boolean(env.DB) });
     }
     if (url.pathname === "/discover") return json({ ok: false, error: "endpoint_retired" }, 410);
 
