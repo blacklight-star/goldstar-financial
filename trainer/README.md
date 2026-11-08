@@ -50,42 +50,44 @@ CI run:
 
 No AI calls, KV/D1 writes, training, approvals, Cron changes, active deployments, or Production changes were performed. Trainer Staging Cron remains empty; Trainer Staging active deployment remains V9; L2 active deployment remains the pre-existing version. All new Worker versions are Preview-only.
 
-## Independent NDS source registry (2026-11-09)
+## NDS Source Authority & Acquisition Policy (2026-11-09)
 
-These sources are indexed separately from the four configured Telegram channels. No independent archive silently replaces an official source.
+### Priority 1 — Academia: primary author-published NDS source
 
-### 1. Academia — author-linked document, currently blocked for automated fetch
+Academia is the organization's **primary NDS knowledge source**, not a secondary independent archive.
 
-- **NDS Strategy English Version**, Dr. Iraj Jafarian; document ID `129627974`.
-- Provenance: `author_linked_independent_platform`.
-- Retrieval method: `academia_author_published_document_html`.
-- The official NDS Learning Hub channel points users to Dr. Jafarian's Academia profile, and the profile lists this document under his work. This supports author-linked attribution and NDS relevance, not independent validation of performance claims.
-- **Runtime result:** the Trainer Preview fetch returned HTTP 403. It is allowlisted as a catalogued author-linked source but is not currently ingestion-enabled.
+Core primary documents:
+- **NDS Strategy English Version** — Dr. Iraj Jafarian, document 129627974: https://www.academia.edu/129627974/NDS_Strategy_English_Version
+- **NDS farsi** — Dr. Iraj Jafarian, document 129628090: https://www.academia.edu/129628090/NDS_farsi
 
-### 2. TG.ME — individually indexed third-party mirror posts, metadata only
+The author's Academia profile lists both works under "Papers by Dr Iraj Jafarian"; the NDS Farsi description explicitly says NDS was designed by Dr Iraj Jafarian. Other author-listed documents are catalogued as primary-author supplements, with the AI/quantitative paper marked co-authored.
 
-- Channel: `@fuzzylogic_nds` / NDS Learning Hub.
-- Provenance: `third_party_telegram_archive`.
-- Capture method: `tgme_public_post_html`.
-- TG.ME provides stable IDs and individual page permalinks that point back to original Telegram post URLs. It is a third-party presentation layer, not Telegram itself.
-- The current validation establishes post identity and caption/title metadata only. It does **not** establish access to the complete lesson video, transcript, or full teaching content. Therefore the source is indexed for cross-reference, but **not ingested into the Trainer's AI/rule-extraction pipeline and not eligible for L2 rule review or approval**.
-- Indexed post/lesson pairs: `983→65`, `972→64`, `967→63-2`, `965→63-1`, `958→62`, `944→61`, `937→60`, `936→59`, `935→58`, `934→57`, `933→56`, `931→55`, `930→54`, `929→53`, `926→52`, `924→50`, `922→49`, `921→48`, `919→47`, `907→45`, `906→44`, `905→43`.
-- Before any ingestion, each post still needs retrievable lesson media or a reliable transcript, content-hash capture, provenance validation, and L2 verifier support for the exact archive provenance.
+**Account entitlement:** Academia's current Help Center says an individual PDF can be downloaded at no cost with a free account; Premium is not required for a single-paper download. The owner already has a free account. Source: https://support.academia.edu/hc/en-us/articles/29325571934359-How-do-I-download-papers-for-free-on-Academia
 
-### 3. Telemetr — historical cross-reference only
+**Acquisition boundary:** the current Academia Terms of Use prohibit scraping/crawling, bots, and automated access/download outside Academia-provided interfaces or ordinary browsers. Therefore the Trainer must not crawl Academia or replay hidden endpoints. Acquisition is user-initiated through the normal logged-in Academia interface, then the downloaded PDF is imported into the controlled Trainer pipeline. Source: https://www.academia.edu/terms (last updated May 20, 2026).
 
-- Public archive: https://telemetr.io/en/channels/1645847716-fuzzylogic_nds/posts
-- Provenance: `third_party_telegram_archive`.
-- Catalog-only. No stable, individually verified post evidence chain has been established for Trainer intake.
+**Evidence chain for each imported PDF:**
+1. Exact Academia document ID and canonical page URL.
+2. File type `application/pdf`, page count, original-file SHA-256.
+3. Text extracted from the downloaded PDF with page-level references.
+4. Excerpt hash and extracted-text hash.
+5. Trainer HMAC signature including origin type, capture method, PDF hash, and NDS rule content.
+6. Independent L2 verification of the exact author-document allowlist and signature.
 
-### 4. Further author-listed Academia material
+The source is primary by authorship/provenance; that does not by itself prove trading performance claims. Do not fine-tune model weights or redistribute source PDFs. Broader/commercial use requires the applicable author/platform permissions to be checked.
 
-NDS Farsi (129628090), Advanced Money Management (122966805), Advanced Quantitative Trading with AI (122832409), and NDS New Approach (122576333) remain identified by profile metadata only; full-text extraction and document integrity review are pending.
+### Priority 2 — Official Telegram sources
 
-### Source-readiness boundary
+The configured channels remain unchanged: NDS4ALLVIDEOS, FuzzyLogic_NDS, BNJ1I, and cottagends. Their strict public-post extraction gate remains separate from Academia acquisition.
 
-- The four official Telegram sources remain unchanged. The strict official-source gate still requires actual post content from all four; independent catalogues do not turn that gate green.
-- Academia is blocked by HTTP 403; TG.ME is metadata-only; Telemetr is cross-reference only.
-- No independent archive content has been admitted to rule extraction or training.
-- L2 eligibility is not rule validation or approval; L1 remains the final owner-approval gate.
-- All Preview diagnostics are fetch-only: no AI invocation, KV/D1 write, training run, approval, Cron change, active deployment, or Production change.
+### Priority 3 — Third-party archives
+
+TG.ME provides indexed post identifiers and caption metadata for FuzzyLogic_NDS, but the sampled HTML did not expose lesson video/transcript content. Telemetr remains a historical cross-reference. These archives do not displace Academia or the original Telegram source and are not eligible for rule extraction on metadata alone.
+
+### Current readiness
+
+- Academia: **primary authority confirmed; manual first-party PDF acquisition/import path pending**. HTTP 403 from the unauthenticated Worker was an access-method limitation, not an authority finding.
+- TG.ME: metadata index only; no video/media URLs found in six sampled posts.
+- Telegram: NDS4ALLVIDEOS returned 20 posts; the other three configured channels returned zero parsed posts in the last strict run.
+- No AI call, KV/D1 write, training, approval, Cron change, active deployment, or Production change was performed by the source-catalog correction.
+- L1 remains the final approval authority; L2 verifies evidence; Trainer only extracts and signs candidate evidence.
