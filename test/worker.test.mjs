@@ -174,7 +174,9 @@ function sourceEvidencePayloadForTest(rule) {
     ...(rule.sourceArchiveUrl ? { sourceArchiveUrl: String(rule.sourceArchiveUrl) } : {}),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
-    sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
+    ...(rule.sourceDocumentFormat ? { sourceDocumentFormat: String(rule.sourceDocumentFormat) } : {}),
+    ...(rule.sourceDocumentSha256 ? { sourceDocumentSha256: String(rule.sourceDocumentSha256).toLowerCase() } : {})
   };
   if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
   payload.sourceExcerptVerified = rule.sourceExcerptVerified === true;
@@ -222,7 +224,9 @@ function approvalRulePayload(rule) {
     ...(rule.sourceArchiveUrl ? { sourceArchiveUrl: String(rule.sourceArchiveUrl) } : {}),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
-    sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
+    ...(rule.sourceDocumentFormat ? { sourceDocumentFormat: String(rule.sourceDocumentFormat) } : {}),
+    ...(rule.sourceDocumentSha256 ? { sourceDocumentSha256: String(rule.sourceDocumentSha256).toLowerCase() } : {})
   };
   if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
   payload.sourceEvidenceSignature = String(rule.sourceEvidenceSignature || "");
@@ -989,41 +993,62 @@ test("Preview-only HMAC interoperability route verifies the fixed Trainer fixtur
 });
 
 
-test("allowlisted author-linked Academia document can be approval-eligible but other independent archives cannot", async () => {
-  const authorLinked = evidenceRule({
+test("author-published Academia NDS PDFs are primary evidence; only exact signed source documents qualify", async () => {
+  const english = evidenceRule({
     id: "academia-nds-english-v1",
     sourcePostId: "129627974",
     sourcePostUrl: "https://www.academia.edu/129627974/NDS_Strategy_English_Version",
-    sourceCaptureMethod: "academia_author_published_document_html",
-    sourceOriginType: "author_linked_independent_platform"
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceOriginType: "primary_author_published_source",
+    sourceDocumentFormat: "application/pdf",
+    sourceDocumentSha256: "a".repeat(64)
+  });
+  const farsi = evidenceRule({
+    id: "academia-nds-farsi-v1",
+    sourcePostId: "129628090",
+    sourcePostUrl: "https://www.academia.edu/129628090/NDS_farsi",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceOriginType: "primary_author_published_source",
+    sourceDocumentFormat: "application/pdf",
+    sourceDocumentSha256: "b".repeat(64)
   });
   const unknownDocument = evidenceRule({
     id: "academia-unknown",
     sourcePostId: "129627974",
     sourcePostUrl: "https://www.academia.edu/129627974/Other_Document",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceOriginType: "primary_author_published_source",
+    sourceDocumentFormat: "application/pdf",
+    sourceDocumentSha256: "c".repeat(64)
+  });
+  const legacyHtmlFetcher = evidenceRule({
+    id: "academia-legacy-html-fetch",
+    sourcePostId: "129627974",
+    sourcePostUrl: "https://www.academia.edu/129627974/NDS_Strategy_English_Version",
     sourceCaptureMethod: "academia_author_published_document_html",
     sourceOriginType: "author_linked_independent_platform"
   });
-  const unverifiedMirror = evidenceRule({
+  const telemetrMirror = evidenceRule({
     id: "telemetr-mirror",
     sourcePostId: "129627974",
     sourcePostUrl: "https://telemetr.io/en/channels/1645847716-fuzzylogic_nds/posts",
     sourceCaptureMethod: "telemetr_archive_html",
     sourceOriginType: "third_party_telegram_archive"
   });
-  const state = makeEnv({ pending: [authorLinked, unknownDocument, unverifiedMirror] });
+  const state = makeEnv({ pending: [english, farsi, unknownDocument, legacyHtmlFetcher, telemetrMirror] });
   const response = await worker.fetch(makeRequest("/training/pending", undefined, {
     "X-API-Key": "general-api-key"
   }), state.env, ctx);
   assert.equal(response.status, 200);
   const result = await response.json();
-  assert.equal(result.totalPendingEntries, 3);
-  assert.equal(result.approvalEligibleCount, 1);
+  assert.equal(result.totalPendingEntries, 5);
+  assert.equal(result.approvalEligibleCount, 2);
   assert.equal(result.rules.find(rule => rule.id === "academia-nds-english-v1").approvalEligible, true);
+  assert.equal(result.rules.find(rule => rule.id === "academia-nds-farsi-v1").approvalEligible, true);
   assert.equal(result.rules.find(rule => rule.id === "academia-unknown").approvalEligible, false);
+  assert.equal(result.rules.find(rule => rule.id === "academia-legacy-html-fetch").approvalEligible, false);
   assert.equal(result.rules.find(rule => rule.id === "telemetr-mirror").approvalEligible, false);
 });
-
 
 test("TG.ME metadata-only archive posts remain ineligible until lesson media or transcript is verified", async () => {
   const archived = evidenceRule({
