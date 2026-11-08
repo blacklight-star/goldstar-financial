@@ -67,3 +67,17 @@ test("public preview dry-run endpoint is fetch-only and never calls AI or writes
     globalThis.fetch = originalFetch;
   }
 });
+
+test("candidate preview hostname can access the fetch-only parser diagnostics", async () => {
+  const originalFetch = globalThis.fetch;
+  const html = '<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/126"><div class="tgme_widget_message_text">A long public Telegram sample containing Nodal Displacement Sequencing, Hook, Flag and Rally structural terms for the parser smoke test.</div></div></div>';
+  globalThis.fetch = async () => new Response(html, { status: 200, headers: { "content-type": "text/html" } });
+  try {
+    const request = new Request("https://nds-gate-v12-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/dry-run");
+    const response = await worker.fetch(request, { KNOWLEDGE: { async get() { return null; }, async put() { throw new Error("must not write"); } }, AI: { async run() { throw new Error("must not call AI"); } } });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).fetchOnly, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
