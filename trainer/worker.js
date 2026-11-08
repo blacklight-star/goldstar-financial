@@ -510,7 +510,12 @@ async function readAcademiaDocument(env, source) {
   }
   const html = await response.text();
   const text = extractAcademiaDocumentText(html);
+  const pageTitle = ((html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i) || [])[1] || "").replace(/<[^>]+>/g, " ").trim();
   if (text.length < 1200) throw new Error("Academia page did not expose enough document text for source verification");
+  if (!/NDS Strategy English Version/i.test(pageTitle + " " + text.slice(0, 1200)) ||
+      !/Iraj Jafarian/i.test(text)) {
+    throw new Error("Academia document title/author identity did not match the allowlisted NDS source");
+  }
   const post = {
     sourcePostId: source.documentId,
     sourcePostKey: "academia/" + source.documentId,
@@ -544,6 +549,21 @@ async function readSource(env, source) {
   return source.sourceType === "independent_document"
     ? readAcademiaDocument(env, source)
     : readChannel(env, source);
+}
+
+function buildPromptPosts(eligiblePosts) {
+  return eligiblePosts.flatMap(post => {
+    if (post.sourceCaptureMethod !== "academia_author_published_document_html") {
+      return [{ sourcePostId: post.sourcePostId, text: post.text.slice(0, 1600) }];
+    }
+    const segments = post.text.split(/\\n+/)
+      .map(segment => segment.trim())
+      .filter(segment => segment.length >= 60 &&
+        /\\b(?:NDS|nodal|node|hook|rally|flag|cycle|fractal|symmetry|sequenc|trading rule|stop.?loss|time.?frame)\\b/i.test(segment));
+    const unique = Array.from(new Set(segments)).slice(0, 12);
+    return (unique.length ? unique : [post.text.slice(0, 1000)])
+      .map(text => ({ sourcePostId: post.sourcePostId, text: text.slice(0, 1000) }));
+  });
 }
 
 async function runDryRun(env, channelName, fetchOnly) {
@@ -739,10 +759,7 @@ async function runScheduledTraining(env) {
           });
           continue;
         }
-        const promptPosts = eligiblePosts.map(post => ({
-          sourcePostId: post.sourcePostId,
-          text: post.text.slice(0, 1600)
-        }));
+        const promptPosts = buildPromptPosts(eligiblePosts);
         const prompt = "Extract only explicit NDS trading rules. Exclude channel administration, video upload notices, moderation, advertisements, and unrelated discussion. Return ONLY a JSON array. Each item must contain contentType exactly trading_rule, sourcePostId copied from one supplied post, sourceExcerpt copied verbatim as a contiguous 40-1000 character substring of that post, category, rule, conditions, priority. Never invent a sourcePostId or paraphrase sourceExcerpt. If no valid trading rule exists, return []. Source posts: " + JSON.stringify(promptPosts);
         summary.totalEligiblePosts += eligiblePosts.length;
         summary.aiCalls += 1;
