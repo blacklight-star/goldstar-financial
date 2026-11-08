@@ -15,3 +15,40 @@ jobs:
         with:
           node-version: 20
       - run: node --test trainer/worker.test.js
+
+      - name: Live immutable Trainer V18 preview checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://26d6a4fb-goldstar-trainer-staging.goldstar-nsl83.workers.dev"
+
+          health="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 "$BASE/health")"
+          HEALTH="$health" node -e '
+            const data = JSON.parse(process.env.HEALTH);
+            if (data.ok !== true || data.scheduler !== "paused; no Cron triggers configured") {
+              console.error("Trainer V18 health check failed:", data);
+              process.exit(1);
+            }
+            console.log("Trainer V18 health OK; scheduler remains paused");
+          '
+
+          parser="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 "$BASE/__preview/parser-selftest")"
+          PARSER="$parser" node -e '
+            const data = JSON.parse(process.env.PARSER);
+            if (data.success !== true || !data.checks || Object.values(data.checks).some(value => value !== true)) {
+              console.error("Trainer V18 parser self-test failed:", data);
+              process.exit(1);
+            }
+            console.log("Trainer V18 parser self-test OK");
+          '
+
+          dry_run="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 30 "$BASE/__preview/dry-run?channel=NDS4ALLVIDEOS")"
+          DRY_RUN="$dry_run" node -e '
+            const data = JSON.parse(process.env.DRY_RUN);
+            if (data.dryRun !== true || data.fetchOnly !== true || data.persisted !== false ||
+                !Number.isInteger(data.postCount) || typeof data.channel !== "string") {
+              console.error("Trainer V18 fetch-only dry-run failed:", data);
+              process.exit(1);
+            }
+            console.log("Trainer V18 Telegram fetch-only dry-run OK; no AI or persistence path invoked");
+          '
