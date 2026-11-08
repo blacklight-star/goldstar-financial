@@ -16,44 +16,55 @@ jobs:
           node-version: 20
       - run: node --test trainer/worker.test.js
 
-      - name: Live immutable Trainer V20 preview checks
+      - name: Live immutable Trainer V21 preview checks
         shell: bash
         run: |
           set -euo pipefail
-          BASE="https://b5fac9df-goldstar-trainer-staging.goldstar-nsl83.workers.dev"
+          BASE="https://21339fb8-goldstar-trainer-staging.goldstar-nsl83.workers.dev"
 
           health="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 "$BASE/health")"
           HEALTH="$health" node -e '
             const data = JSON.parse(process.env.HEALTH);
             if (data.ok !== true || data.scheduler !== "paused; no Cron triggers configured") {
-              console.error("Trainer V20 health check failed:", data);
+              console.error("Trainer V21 health check failed:", data);
               process.exit(1);
             }
-            console.log("Trainer V20 health OK; scheduler remains paused");
+            console.log("Trainer V21 health OK; scheduler remains paused");
           '
 
           parser="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 "$BASE/__preview/parser-selftest")"
           PARSER="$parser" node -e '
             const data = JSON.parse(process.env.PARSER);
             if (data.success !== true || !data.checks || Object.values(data.checks).some(value => value !== true)) {
-              console.error("Trainer V20 parser self-test failed:", data);
+              console.error("Trainer V21 parser self-test failed:", data);
               process.exit(1);
             }
-            console.log("Trainer V20 parser self-test OK");
+            console.log("Trainer V21 parser self-test OK");
           '
 
 
           diagnostics="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 35 "$BASE/__preview/source-diagnostics")"
           DIAGNOSTICS="$diagnostics" node -e '
             const data = JSON.parse(process.env.DIAGNOSTICS);
-            if (data.dryRun !== true || data.persisted !== false || data.aiCalled !== false ||
-                !Array.isArray(data.channels) || data.channels.length !== 8 ||
-                data.channels.some(channel => typeof channel.channel !== "string" ||
-                  !["configured_source", "diagnostic_only"].includes(channel.sourceRole))) {
-              console.error("Trainer V20 source diagnostics failed:", data);
+            const configured = Array.isArray(data.channels)
+              ? data.channels.filter(channel => channel.sourceRole === "configured_source")
+              : [];
+            const expected = ["NDS4ALLVIDEOS", "FuzzyLogic_NDS", "BNJ1I", "cottagends"];
+            const actual = configured.map(channel => channel.channel).sort();
+            if (data.ok !== true || data.dryRun !== true || data.persisted !== false || data.aiCalled !== false ||
+                !Array.isArray(data.channels) || data.channels.length !== 8 || configured.length !== 4 ||
+                configured.some(channel => channel.success !== true || channel.retrievalStatus !== "posts_extracted" ||
+                  !Number.isInteger(channel.postCount) || channel.postCount < 1) ||
+                actual.join(",") !== expected.sort().join(",") ||
+                data.channels.filter(channel => channel.sourceRole === "diagnostic_only").length !== 4) {
+              console.error("Trainer V21 configured-source diagnostics failed:", JSON.stringify(data, null, 2));
               process.exit(1);
             }
-            console.log("Trainer V20 source diagnostics OK: 8 channels; no AI; no persistence");
+            console.log("Trainer V21 configured sources all extracted posts; diagnostic-only channels reported separately; no AI; no persistence");
+            console.log(JSON.stringify(data.channels.map(channel => ({
+              channel: channel.channel, role: channel.sourceRole, status: channel.retrievalStatus,
+              success: channel.success, posts: channel.postCount || 0
+            }))));
           '
 
           dry_run="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 30 "$BASE/__preview/dry-run?channel=NDS4ALLVIDEOS")"
@@ -61,9 +72,9 @@ jobs:
             const data = JSON.parse(process.env.DRY_RUN);
             if (data.dryRun !== true || data.fetchOnly !== true || data.persisted !== false ||
                 !Number.isInteger(data.postCount) || typeof data.channel !== "string") {
-              console.error("Trainer V20 fetch-only dry-run failed:", data);
+              console.error("Trainer V21 fetch-only dry-run failed:", data);
               process.exit(1);
             }
-            console.log("Trainer V20 Telegram fetch-only dry-run OK; no AI or persistence path invoked");
+            console.log("Trainer V21 Telegram fetch-only dry-run OK; no AI or persistence path invoked");
           '
 
