@@ -517,7 +517,7 @@ async function runScheduledTraining(env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/__preview/parser-selftest" && request.method === "GET" && (url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "staging-v40-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev")) {
+    if (url.pathname === "/__preview/parser-selftest" && request.method === "GET" && (url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "staging-v40-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev" || url.hostname === "nds-gate-v12-goldstar-trainer-staging.goldstar-nsl83.workers.dev")) {
       const sampleHtml = '<div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/125"><div class="tgme_widget_message_text js-message_text">Rule A: price sweeps prior low <div class="tgme_widget_message_link_preview">nested detail</div> and then reclaims it &amp; confirms.</div><div class="tgme_widget_message_caption">Risk must be defined before entry.</div></div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/126"><div class="tgme_widget_message_text js-message_text">Rule B: wait for higher-timeframe confirmation.</div></div></div>';
       const parsed = parseTelegramPosts(sampleHtml, { name: "NDS4ALLVIDEOS" });
       const lowerCaseHtml = sampleHtml.replace(/NDS4ALLVIDEOS\//g, "fuzzylogic_nds/");
@@ -539,7 +539,7 @@ export default {
       };
       return json({ success: Object.values(checks).every(Boolean), checks, parsed });
     }
-    if (url.pathname === "/__preview/dry-run" && request.method === "GET" && (url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "staging-v40-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev")) {
+    if (url.pathname === "/__preview/dry-run" && request.method === "GET" && (url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "staging-v40-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev" || url.hostname === "nds-gate-v12-goldstar-trainer-staging.goldstar-nsl83.workers.dev")) {
       try {
         const channelName = url.searchParams.get("channel") || CHANNELS[0].name;
         // This preview route is public and must never trigger Workers AI.
@@ -550,7 +550,7 @@ export default {
       }
     }
     if (url.pathname === "/__preview/source-diagnostics" && request.method === "GET" &&
-        (url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev" ||
+        (url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev" || url.hostname === "nds-gate-v12-goldstar-trainer-staging.goldstar-nsl83.workers.dev" ||
          url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev")) {
       const results = await Promise.all(DIAGNOSTIC_CHANNELS.map(async function(channel) {
         try {
