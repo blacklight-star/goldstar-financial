@@ -542,7 +542,9 @@ export default {
     if (url.pathname === "/__preview/dry-run" && request.method === "GET" && (url.hostname === "staging-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "staging-v40-goldstar-trainer.goldstar-nsl83.workers.dev" || url.hostname === "goldstar-trainer-staging.goldstar-nsl83.workers.dev")) {
       try {
         const channelName = url.searchParams.get("channel") || CHANNELS[0].name;
-        return json(await runDryRun(env, channelName, url.searchParams.get("fetchOnly") === "1" || url.searchParams.has("channel")));
+        // This preview route is public and must never trigger Workers AI.
+        // AI-backed extraction requires a separate authenticated control path.
+        return json(await runDryRun(env, channelName, true));
       } catch (error) {
         return json({ success: false, dryRun: true, persisted: false, error: String(error.message || error) }, 502);
       }
