@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 import worker from "../workers/cmc-ingest/src/worker.js";
 
 function makeDb({ failBatch = false } = {}) {
-  const statements = [];
+  const prepared = [];
+  const executed = [];
   const batches = [];
   const db = {
     prepare(sql) {
@@ -12,9 +13,9 @@ function makeDb({ failBatch = false } = {}) {
         sql,
         args: [],
         bind(...args) { this.args = args; return this; },
-        async run() { statements.push(this); return { success: true }; }
+        async run() { executed.push(this); return { success: true }; }
       };
-      statements.push(statement);
+      prepared.push(statement);
       return statement;
     },
     async batch(items) {
@@ -23,7 +24,7 @@ function makeDb({ failBatch = false } = {}) {
       return items.map(() => ({ success: true, meta: { changes: 1 } }));
     }
   };
-  return { db, statements, batches };
+  return { db, prepared, executed, batches };
 }
 
 function makeRequest(path, method = "GET", body, headers = {}) {
@@ -98,7 +99,7 @@ test("missing or incorrect ingest token is rejected before D1 or upstream access
   try {
     const response = await worker.fetch(makeRequest("/cmc/quotes", "POST", { symbols: ["BTC"] }), env);
     assert.equal(response.status, 401);
-    assert.equal(state.statements.length, 0);
+    assert.equal(state.prepared.length, 0);
     assert.equal(fetchCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
@@ -143,8 +144,8 @@ test("oversized payload is rejected before provider access", async () => {
       headers: { "content-type": "application/json", authorization: "Bearer unit-test-ingest-token" },
       body: JSON.stringify({ symbols: ["BTC"], padding: "x".repeat(5000) })
     }), env);
-    assert.equal(response.status, 400); // Extra field is rejected before any provider call.
-    assert.equal(state.statements.length, 0);
+    assert.equal(response.status, 413); // Body-size limit is enforced before parsing or provider calls.
+    assert.equal(state.prepared.length, 0);
     assert.equal(fetchCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
@@ -175,7 +176,7 @@ test("valid CMC quotes are written to MARKET_DB with success audit in one D1 bat
     assert.equal(captured.apiKey, env.CMC_API_KEY);
     assert.match(captured.url, /symbol=BTC/);
     assert.match(captured.url, /convert=USD/);
-    assert.equal(state.statements.length, 2); // running audit + the batched quote/update statements
+    assert.equal(state.prepared.length, 3); // running audit, quote upsert, and successful audit
     assert.equal(state.batches.length, 1);
     assert.equal(state.batches[0].length, 2);
     assert.match(state.batches[0][0].sql, /INSERT INTO cmc_quotes/);
@@ -203,8 +204,8 @@ test("provider errors are recorded as failed runs and no quotes are committed", 
     const result = await response.json();
     assert.equal(result.error, "ingestion_failed");
     assert.equal(state.batches.length, 0);
-    assert.equal(state.statements.length, 2); // running + failed audit
-    assert.match(state.statements[1].sql, /status = 'failed'/);
+    assert.equal(state.prepared.length, 2); // running + failed audit
+    assert.match(state.prepared[1].sql, /status = 'failed'/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -223,7 +224,7 @@ test("D1 commit failure does not claim that quotes were ingested", async () => {
     assert.equal(response.status, 502);
     assert.equal((await response.json()).error, "ingestion_failed");
     assert.equal(state.batches.length, 1);
-    assert.match(state.statements.at(-1).sql, /status = 'failed'/);
+    assert.match(state.prepared.at(-1).sql, /status = 'failed'/);
   } finally {
     globalThis.fetch = originalFetch;
   }
