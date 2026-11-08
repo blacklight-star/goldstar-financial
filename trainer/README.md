@@ -26,3 +26,10 @@ Baseline: Cloudflare Worker `goldstar-trainer-staging`, deployed version 9. No P
 
 - The unauthenticated `/__preview/dry-run` route is fetch-only. It can inspect public Telegram HTML but cannot invoke Workers AI or write KV, preventing anonymous AI-budget consumption.
 - AI-backed extraction remains available only through the scheduled trainer path or authenticated admin route.
+
+
+## Signed evidence requirement
+
+- Each new pending trading-rule record must include a SHA-256 HMAC signature over its exact source-post identity, excerpt hash, full-post content hash, capture method, and verification flag.
+- The secret `NDS_EVIDENCE_HMAC_KEY` must be configured on both this Trainer Worker and Financial L2. If it is missing, scheduled training fails closed before Telegram retrieval, AI inference, or candidate persistence.
+- The same secret must never be exposed to clients or stored in KV/D1. Configure it as a Cloudflare Worker secret only.
