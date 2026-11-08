@@ -360,3 +360,33 @@ test("source diagnostics require all configured channels but not diagnostic-only
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("Preview-only fixed HMAC sample signs the cross-worker fixture without AI or KV writes", async () => {
+  const key = "unit-test-trainer-hmac-key-32-bytes-minimum";
+  const calls = { ai: 0, writes: 0 };
+  const env = {
+    NDS_EVIDENCE_HMAC_KEY: key,
+    KNOWLEDGE: {
+      async get() { return null; },
+      async put() { calls.writes++; }
+    },
+    AI: { async run() { calls.ai++; throw new Error("Preview HMAC sample must not call AI"); } }
+  };
+  const host = "https://deadbeef-goldstar-trainer-staging.goldstar-nsl83.workers.dev";
+  const response = await worker.fetch(new Request(host + "/__preview/hmac-sample"), env);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(result.sample.id, "nds-preview-hmac-parity-v1");
+  assert.equal(result.sample.sourceCaptureMethod, "telegram_public_post_html");
+  assert.equal(result.sample.sourceEvidenceSignature, await signSourceEvidence(env, result.sample));
+  assert.equal(JSON.stringify(result).includes(key), false);
+  assert.equal(calls.ai, 0);
+  assert.equal(calls.writes, 0);
+
+  const blocked = await worker.fetch(new Request(
+    "https://trainer.example.com/__preview/hmac-sample"
+  ), env);
+  assert.equal(blocked.status, 404);
+});
