@@ -138,7 +138,7 @@ function makeEnv({ pending = [], active = [], otherKnowledge = {}, strategy = nu
       API_KEY: "general-api-key",
       L1_BRIDGE_KEY: "dedicated-l1-bridge-key",
       MQL5_GATEWAY_API_KEY: "mql5-client-gateway-secret",
-      MQL5_GATEWAY_URL: "https://mql5-readonly-v4-trading-research-agent-staging.goldstar-nsl83.workers.dev",
+      MQL5_GATEWAY_URL: "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev",
       NDS_EVIDENCE_HMAC_KEY: TEST_NDS_EVIDENCE_KEY,
       KNOWLEDGE,
       STRATEGY,
@@ -932,5 +932,7 @@ test("migrations define shared controls and isolate market-research event tables
 test("staging Wrangler config cannot target Production or enable a Cron", async () => {
   const config = await readFile(new URL("../wrangler.staging.toml", import.meta.url), "utf8");
   assert.match(config, /name = "goldstar-financial-v3-staging"/);
+  assert.match(config, /MQL5_GATEWAY_URL = "https:\/\/05931c07-trading-research-agent-staging\.goldstar-nsl83\.workers\.dev"/);
+  assert.doesNotMatch(config, /mql5-readonly-v4/);
   assert.doesNotMatch(config, /crons\s*=/i);
 });
