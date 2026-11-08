@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-09",
+  "policy": {
+    "independentPlatformDoesNotMeanIndependentValidation": true,
+    "telegramSourcesRemainUnchanged": true,
+    "approvalRequiresL2EvidenceVerification": true,
+    "noAutomaticTrainingOrApproval": true
+  },
+  "sources": [
+    {
+      "id": "academia-nds-strategy-english-v1",
+      "title": "NDS Strategy English Version",
+      "author": "Dr. Iraj Jafarian",
+      "platform": "Academia.edu",
+      "documentId": "129627974",
+      "canonicalUrl": "https://www.academia.edu/129627974/NDS_Strategy_English_Version",
+      "sourceOriginType": "author_linked_independent_platform",
+      "sourceCaptureMethod": "academia_author_published_document_html",
+      "sourceRole": "foundational_author_linked_document",
+      "ingestionEnabled": true,
+      "status": "allowlisted_pending_live_preview_verification",
+      "provenanceBasis": "The NDS Learning Hub public Telegram post links to the author's Academia profile for NDS articles; the profile lists this document under the author's papers.",
+      "verificationScope": "author-linked attribution and NDS subject relevance",
+      "notEstablished": [
+        "independent validation of predictive performance",
+        "reproducibility of quantitative claims",
+        "commercial or legal publication status"
+      ]
+    },
+    {
+      "id": "telemetr-fuzzylogic-nds-archive",
+      "title": "Public archive for Fuzzy Logic (NDS) Telegram channel",
+      "platform": "Telemetr",
+      "canonicalUrl": "https://telemetr.io/en/channels/1645847716-fuzzylogic_nds/posts",
+      "sourceOriginType": "third_party_telegram_archive",
+      "sourceCaptureMethod": "telemetr_archive_html",
+      "sourceRole": "historical_cross_reference_only",
+      "ingestionEnabled": false,
+      "status": "catalog_only_not_ingestion_ready",
+      "reason": "Public archive pages and lesson labels are visible, but a stable individually validated post identity and exact post-level permalink were not verified for the Trainer evidence chain."
+    },
+    {
+      "id": "academia-nds-farsi",
+      "title": "NDS farsi",
+      "author": "Dr. Iraj Jafarian",
+      "platform": "Academia.edu",
+      "documentId": "129628090",
+      "canonicalUrl": "https://www.academia.edu/129628090/NDS_farsi",
+      "sourceOriginType": "author_linked_independent_platform",
+      "sourceCaptureMethod": "academia_author_published_document_html",
+      "sourceRole": "potential_primary_language_supplement",
+      "ingestionEnabled": false,
+      "status": "identified_full_text_review_pending",
+      "reason": "Profile metadata identifies the document, but readable full text and document integrity have not yet been verified in the current capture path."
+    },
+    {
+      "id": "academia-nds-money-management",
+      "title": "Advanced Money Management Strategy Applicable to Nodal Displacement Geometry",
+      "author": "Dr. Iraj Jafarian",
+      "platform": "Academia.edu",
+      "documentId": "122966805",
+      "canonicalUrl": "https://www.academia.edu/122966805/Advanced_Money_Management_Strategy_Applicable_to_Nodal_Displacement_Geometry",
+      "sourceOriginType": "author_linked_independent_platform",
+      "sourceCaptureMethod": "academia_author_published_document_html",
+      "sourceRole": "risk_management_supplement",
+      "ingestionEnabled": false,
+      "status": "identified_full_text_review_pending"
+    },
+    {
+      "id": "academia-nds-ai-quant",
+      "title": "Advanced Quantitative Trading: Integrating AI with NDS",
+      "authors": [
+        "Dr. Iraj Jafarian",
+        "Ramin Rostami"
+      ],
+      "platform": "Academia.edu",
+      "documentId": "122832409",
+      "canonicalUrl": "https://www.academia.edu/122832409/Advanced_Quantitative_Trading_Integrating_Artificial_Intelligence_with_Nodal_Displacement_Sequencing",
+      "sourceOriginType": "author_linked_independent_platform",
+      "sourceCaptureMethod": "academia_author_published_document_html",
+      "sourceRole": "research_supplement_not_core_rules",
+      "ingestionEnabled": false,
+      "status": "identified_full_text_review_pending"
+    },
+    {
+      "id": "academia-nds-new-approach",
+      "title": "Nodal Displacement Sequencing (NDS) New Approach",
+      "author": "Dr. Iraj Jafarian",
+      "platform": "Academia.edu",
+      "documentId": "122576333",
+      "canonicalUrl": "https://www.academia.edu/122576333/Nodal_Displacement_Sequencing_NDS_New_Approach",
+      "sourceOriginType": "author_linked_independent_platform",
+      "sourceCaptureMethod": "academia_author_published_document_html",
+      "sourceRole": "research_supplement_not_core_rules",
+      "ingestionEnabled": false,
+      "status": "identified_full_text_review_pending"
+    }
+  ]
+}
