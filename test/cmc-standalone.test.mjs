@@ -173,7 +173,7 @@ test("CMC owner credential is validated, AES-GCM encrypted at rest, and reused f
 
   try {
     const saveResponse = await worker.fetch(request("/api/cmc/credential", { apiKey }), env);
-    assert.equal(saveResponse.status, 200);
+    assert.equal(saveResponse.status, 200, JSON.stringify(await saveResponse.clone().json()));
     const saveResult = await saveResponse.json();
     assert.equal(saveResult.ok, true);
     assert.equal(saveResult.credential_validated, true);
