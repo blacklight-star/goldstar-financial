@@ -1,6 +1,6 @@
 const CHANNELS = [
   { url: "https://t.me/s/NDS4ALLVIDEOS", name: "NDS4ALLVIDEOS" },
-  { url: "https://t.me/s/FuzzyLogic_NDS", name: "FuzzyLogic_NDS" },
+  { url: "https://t.me/s/fuzzylogic_nds", name: "FuzzyLogic_NDS" },
   { url: "https://t.me/s/BNJ1I", name: "BNJ1I" },
   { url: "https://t.me/s/cottagends", name: "cottagends" }
 ];
