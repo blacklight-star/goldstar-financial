@@ -41,6 +41,13 @@ jobs:
                 case "Trainer V17":
                   ok = data.ok === true && data.scheduler === "paused; no Cron triggers configured";
                   break;
+                case "CMC Ingestion V1":
+                  ok = data.ok === true && data.service === "goldstar-cmc-ingest" &&
+                    data.storage === "dedicated_market_research_d1" &&
+                    data.database_configured === true &&
+                    data.cmc_configured === true &&
+                    data.ingest_auth_configured === true;
+                  break;
               }
               if (!ok) { console.error(process.env.CHECK_NAME + " health check failed:", data); process.exit(1); }
               console.log(process.env.CHECK_NAME + " preview health OK");
@@ -49,3 +56,4 @@ jobs:
           check_json "Financial L2 V30" "https://f43412bc-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
           check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
+          check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
