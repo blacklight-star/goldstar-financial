@@ -87,6 +87,10 @@ test("Trainer signs exact source evidence with the shared HMAC key", async () =>
   const rule = {
     id: "nds_test",
     contentType: "trading_rule",
+    category: "cycle",
+    rule: "A completed cycle requires two hooks and two rallies.",
+    conditions: ["Two hooks and two rallies precede the flag."],
+    priority: 1,
     sourcePostId: "123",
     sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123",
     sourceExcerptHash: "a".repeat(64),
@@ -99,6 +103,10 @@ test("Trainer signs exact source evidence with the shared HMAC key", async () =>
   const payload = {
     id: rule.id,
     contentType: rule.contentType,
+    category: rule.category,
+    rule: rule.rule,
+    conditions: rule.conditions,
+    priority: rule.priority,
     sourcePostId: rule.sourcePostId,
     sourcePostUrl: rule.sourcePostUrl,
     sourceExcerptHash: rule.sourceExcerptHash,
@@ -108,6 +116,16 @@ test("Trainer signs exact source evidence with the shared HMAC key", async () =>
   };
   const expected = createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex");
   assert.equal(signature, expected);
+  for (const change of [
+    { rule: "Tampered rule text." },
+    { category: "tampered" },
+    { conditions: ["tampered condition"] },
+    { priority: 2 }
+  ]) {
+    const altered = { ...rule, ...change };
+    const alteredSignature = await signSourceEvidence({ NDS_EVIDENCE_HMAC_KEY: secret }, altered);
+    assert.notEqual(alteredSignature, signature);
+  }
 });
 
 test("scheduled training refuses to run or write candidates without the signing key", async () => {
