@@ -55,3 +55,35 @@ Latest verified technical results:
 - No AI calls, KV/D1 writes, Cron changes, approvals, active deployments, or Production changes.
 
 Do not remove the strict source gate to make CI green. Source replacement or alternate ingestion must be explicitly authorized and provenance-labelled.
+
+## Independent NDS source registry (2026-11-09)
+
+Independent-platform ingestion is separate from the four configured Telegram channels. It does not replace or silently reclassify them.
+
+### Ingestion-enabled, author-linked source
+
+- **NDS Strategy English Version** — Dr. Iraj Jafarian, Academia document 129627974.
+- Canonical URL: https://www.academia.edu/129627974/NDS_Strategy_English_Version
+- Origin type: **author_linked_independent_platform**.
+- Capture method: **academia_author_published_document_html**.
+- Basis: the public NDS Learning Hub Telegram post points readers to Dr. Jafarian's Academia profile for NDS articles; that profile lists this document under his papers. The document exposes definitions, the five NDS pillars, cycle structure, and trading-rule sections.
+- Scope: foundational NDS source material only. Author attribution is source provenance, **not independent validation of predictive performance**.
+- Intake requires the final URL to remain on Academia, the exact document ID and title/author identity to match the allowlist, and at least 1,200 characters of readable source text. Trainer records and signs the origin type and capture method; Financial L2 independently checks the exact document allowlist and signature.
+
+### Independent archive, cross-reference only
+
+- **Telemetr public archive for @fuzzylogic_nds** — https://telemetr.io/en/channels/1645847716-fuzzylogic_nds/posts
+- Origin type: **third_party_telegram_archive**.
+- Status: **catalog_only_not_ingestion_ready**.
+- Use: compare historical availability and identify missing lesson posts. It is a third-party copy, not the original author platform. Its currently verified archive view does not yet provide a stable, individually validated post identity suitable for the Trainer evidence chain; therefore it is not automatically ingested or approval-eligible.
+
+### Additional author-listed documents
+
+The Academia profile also lists NDS Farsi (document 129628090), Advanced Money Management (document 122966805), Advanced Quantitative Trading with AI (document 122832409), and NDS New Approach (document 122576333). These are catalogued for later full-text review; they are not ingestion-enabled by this change.
+
+### Source-readiness boundary
+
+- The Telegram diagnostics remain separate and continue to require all four configured Telegram channels to expose actual public post wrappers.
+- A successful Academia archive check does not turn the official Telegram source gate green and does not substitute for Telegram post availability.
+- All independently captured material remains pending. L2 source eligibility is not rule validation or approval; L1 remains the final owner approval gate.
+- Preview diagnostics are fetch-only: no AI invocation, KV/D1 write, training run, approval, Cron change, active deployment, or Production change.
