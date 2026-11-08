@@ -4,6 +4,26 @@ const CHANNELS = [
   { url: "https://t.me/s/BNJ1I", name: "BNJ1I" },
   { url: "https://t.me/s/cottagends", name: "cottagends" }
 ];
+const INDEPENDENT_ARCHIVE_SOURCES = [
+  {
+    url: "https://www.academia.edu/129627974/NDS_Strategy_English_Version",
+    name: "NDS_Academia_Strategy_English_V1",
+    documentId: "129627974",
+    sourceType: "independent_document",
+    sourceOriginType: "author_linked_independent_platform",
+    sourceCaptureMethod: "academia_author_published_document_html",
+    sourceRole: "verified_author_linked_archive"
+  }
+];
+const INGESTION_SOURCES = [
+  ...CHANNELS.map(channel => ({
+    ...channel,
+    sourceType: "telegram",
+    sourceOriginType: "official_telegram_channel",
+    sourceCaptureMethod: "telegram_public_post_html"
+  })),
+  ...INDEPENDENT_ARCHIVE_SOURCES
+];
 const DIAGNOSTIC_CHANNELS = [
   ...CHANNELS,
   { url: "https://t.me/s/NDSsystem", name: "NDSsystem", diagnosticOnly: true },
@@ -170,6 +190,7 @@ const JOURNAL_ALLOWED_KEY = key =>
   key === "trainer:last_seen:FuzzyLogic_NDS" ||
   key === "trainer:last_seen:BNJ1I" ||
   key === "trainer:last_seen:cottagends" ||
+  key === "trainer:last_seen:NDS_Academia_Strategy_English_V1" ||
   /^trainer:(post_hashes|deferred_posts):[A-Za-z0-9_]+$/.test(key) ||
   key === "trainer:last_run";
 
@@ -282,6 +303,7 @@ function sourceEvidencePayload(rule) {
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
     sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
+    sourceOriginType: String(rule.sourceOriginType || ""),
     sourceExcerptVerified: rule.sourceExcerptVerified === true
   };
 }
@@ -366,7 +388,12 @@ function parseTelegramPosts(html, channel) {
     const contentBlocks = extractTelegramContentBlocks(wrapper);
     const postText = cleanTelegramHtml(contentBlocks.join(" "));
     if (!postText && !uniqueLinks.length && !uniqueVideoUrls.length) continue;
-    posts.push({ sourcePostId, sourcePostKey: postKey, sourcePostUrl: "https://t.me/s/" + postKey, text: postText, links: uniqueLinks, youtubeLinks: youtubeLinks, videoUrls: uniqueVideoUrls });
+    posts.push({
+      sourcePostId, sourcePostKey: postKey, sourcePostUrl: "https://t.me/s/" + postKey,
+      text: postText, links: uniqueLinks, youtubeLinks, videoUrls: uniqueVideoUrls,
+      sourceCaptureMethod: "telegram_public_post_html",
+      sourceOriginType: "official_telegram_channel"
+    });
   }
   return posts;
 }
@@ -426,8 +453,98 @@ async function readChannel(env, channel) {
   return { html, text, marker, postIds, posts, hasPosts: posts.length > 0, diagnostics };
 }
 
+function decodeIndependentHtmlEntities(value) {
+  return String(value || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#(\\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
+}
+
+export function extractAcademiaDocumentText(html) {
+  let source = String(html || "");
+  source = source
+    .replace(/<!--[\\s\\S]*?-->/g, " ")
+    .replace(/<(script|style|noscript|svg|iframe|form|nav|header|footer|aside)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi, " ")
+    .replace(/<(br|hr)\\b[^>]*>/gi, "\\n")
+    .replace(/<\\/(p|div|section|article|h[1-6]|li|tr|blockquote)>/gi, "\\n")
+    .replace(/<[^>]+>/g, " ");
+  const text = decodeIndependentHtmlEntities(source)
+    .replace(/[ \\t\\f\\v]+/g, " ")
+    .replace(/ *\\n */g, "\\n")
+    .replace(/\\n{3,}/g, "\\n\\n")
+    .trim();
+  return text.slice(0, 80000);
+}
+
+async function readAcademiaDocument(env, source) {
+  if (!source || source.sourceOriginType !== "author_linked_independent_platform" ||
+      source.sourceCaptureMethod !== "academia_author_published_document_html" ||
+      source.documentId !== "129627974") {
+    throw new Error("Independent archive source is not in the Trainer allowlist");
+  }
+  const requested = new URL(source.url);
+  if (requested.protocol !== "https:" || requested.hostname !== "www.academia.edu" ||
+      requested.pathname.split("/")[1] !== source.documentId) {
+    throw new Error("Independent archive URL failed exact allowlist validation");
+  }
+  const response = await fetch(source.url, {
+    redirect: "follow",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; GoldstarTrainer/1.0)",
+      "Accept": "text/html,application/xhtml+xml"
+    }
+  });
+  const finalUrl = new URL(response.url || source.url);
+  if (!response.ok) throw new Error("Academia HTTP " + response.status);
+  if (!["academia.edu", "www.academia.edu"].includes(finalUrl.hostname) ||
+      finalUrl.pathname.split("/")[1] !== source.documentId) {
+    throw new Error("Academia redirected outside the allowlisted document identity");
+  }
+  const html = await response.text();
+  const text = extractAcademiaDocumentText(html);
+  if (text.length < 1200) throw new Error("Academia page did not expose enough document text for source verification");
+  const post = {
+    sourcePostId: source.documentId,
+    sourcePostKey: "academia/" + source.documentId,
+    sourcePostUrl: source.url,
+    text,
+    links: [],
+    youtubeLinks: [],
+    videoUrls: [],
+    sourceCaptureMethod: source.sourceCaptureMethod,
+    sourceOriginType: source.sourceOriginType
+  };
+  const posts = [post];
+  const marker = await channelContentMarker(posts, text);
+  const diagnostics = {
+    requestedUrl: source.url,
+    finalUrl: finalUrl.toString(),
+    httpStatus: response.status,
+    responseOk: response.ok,
+    redirected: response.redirected === true,
+    htmlLength: html.length,
+    extractedTextLength: text.length,
+    pageTitle: ((html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i) || [])[1] || "").replace(/<[^>]+>/g, " ").trim().slice(0, 180),
+    documentId: source.documentId,
+    sourceOriginType: source.sourceOriginType,
+    sourceCaptureMethod: source.sourceCaptureMethod
+  };
+  return { html, text, marker, postIds: [post.sourceKey], posts, hasPosts: true, diagnostics };
+}
+
+async function readSource(env, source) {
+  return source.sourceType === "independent_document"
+    ? readAcademiaDocument(env, source)
+    : readChannel(env, source);
+}
+
 async function runDryRun(env, channelName, fetchOnly) {
-  const channel = CHANNELS.find(function(item) { return item.name === channelName; });
+  const channel = INGESTION_SOURCES.find(function(item) { return item.name === channelName; });
   if (!channel) throw new Error("Unknown channel");
   const page = await readChannel(env, channel);
   if (fetchOnly) return {
@@ -541,7 +658,7 @@ async function runScheduledTraining(env) {
     const markers = [];
     const hashMapWrites = [];
     const deferredWrites = [];
-    for (const channel of CHANNELS) {
+    for (const channel of INGESTION_SOURCES) {
       let aiCallStarted = false;
       try {
         await renewKnowledgeWriteLock(env, lockOwner);
@@ -667,7 +784,8 @@ async function runScheduledTraining(env) {
             sourceExcerptHash: await sha256Hex(excerpt),
             sourceExcerptVerified: true,
             sourcePostContentHash: await sha256Hex(post.text),
-            sourceCaptureMethod: "telegram_public_post_html",
+            sourceCaptureMethod: post.sourceCaptureMethod || channel.sourceCaptureMethod || "telegram_public_post_html",
+            sourceOriginType: post.sourceOriginType || channel.sourceOriginType || "official_telegram_channel",
             collectedAt: new Date().toISOString(),
             validationStatus: "pending"
           };
@@ -754,8 +872,10 @@ export default {
           sourceExcerptHash: await sha256Hex(sourceExcerpt),
           sourcePostContentHash: await sha256Hex("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction."),
           sourceCaptureMethod: "telegram_public_post_html",
+          sourceOriginType: "official_telegram_channel",
           sourceExcerptVerified: true
         };
+        sample.sourceOriginType = "official_telegram_channel";
         sample.sourceEvidenceSignature = await signSourceEvidence(env, sample);
         return json({ ok: true, sample: sample });
       } catch (_) {
@@ -833,6 +953,41 @@ export default {
         persisted: false,
         aiCalled: false,
         channels: results
+      });
+    }
+    if (url.pathname === "/__preview/independent-archive-diagnostics" && request.method === "GET" &&
+        isAllowedPreviewHost(url)) {
+      const results = await Promise.all(INDEPENDENT_ARCHIVE_SOURCES.map(async function(source) {
+        try {
+          const page = await readAcademiaDocument(env, source);
+          return {
+            name: source.name,
+            sourceOriginType: source.sourceOriginType,
+            sourceCaptureMethod: source.sourceCaptureMethod,
+            success: true,
+            documentId: source.documentId,
+            textLength: page.text.length,
+            contentHash: await sha256Hex(page.text),
+            diagnostics: page.diagnostics
+          };
+        } catch (error) {
+          return {
+            name: source.name,
+            sourceOriginType: source.sourceOriginType,
+            sourceCaptureMethod: source.sourceCaptureMethod,
+            success: false,
+            documentId: source.documentId,
+            error: String(error.message || error).slice(0, 240)
+          };
+        }
+      }));
+      return json({
+        ok: results.length === INDEPENDENT_ARCHIVE_SOURCES.length &&
+          results.every(item => item.success && item.textLength >= 1200),
+        dryRun: true,
+        persisted: false,
+        aiCalled: false,
+        sources: results
       });
     }
     if (url.pathname === "/health" && request.method === "GET") {
