@@ -399,7 +399,7 @@ test("author-linked Academia NDS archive is fetched with independent provenance 
   const calls = { fetch: 0, ai: 0, writes: 0 };
   const paragraphs = Array.from({ length: 18 }, (_, i) =>
     `Section ${i + 1}. Nodal Displacement Sequencing defines nodes, cycles, positive and negative hooks, rallies, flags, market symmetry, fractal structure and ordered sequencing. The author describes how a higher timeframe determines direction while lower timeframes close subordinate cycles. Rules require a meaningful stop loss and distinguish the last N1 and N2 nodes. `
-  ).join("\\n");
+  ).join("\n");
   const html = `<html><head><title>NDS Strategy English Version</title><script>ignored secret text</script></head><body><nav>site navigation</nav><main><article><h1>NDS Strategy English Version</h1><p>Dr Iraj Jafarian</p><p>${paragraphs}</p></article></main></body></html>`;
   globalThis.fetch = async url => {
     calls.fetch++;
