@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - security/require-l1-bridge-for-rule-approval
+      - fix/fail-closed-kv-read-errors
   pull_request:
     branches:
       - main
