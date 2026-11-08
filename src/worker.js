@@ -233,6 +233,27 @@ async function hasVerifiedRuleEvidence(rule, env) {
   return constantTimeEqual(expectedSignatureHex, signature);
 }
 
+async function buildPreviewHmacParityRule(signature) {
+  const sourceExcerpt = "Preview-only NDS HMAC parity fixture: Hook precedes Rally, and the Flag follows the Rally.";
+  return {
+    id: "nds-preview-hmac-parity-v1",
+    validationStatus: "pending",
+    contentType: "trading_rule",
+    category: "cycle",
+    rule: "Preview sample: Hook precedes Rally; Flag follows Rally.",
+    conditions: ["Hook precedes Rally", "Rally precedes Flag"],
+    priority: 5,
+    sourcePostId: "987654321",
+    sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/987654321",
+    sourceExcerpt,
+    sourceExcerptHash: await sha256Hex(sourceExcerpt),
+    sourcePostContentHash: await sha256Hex("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction."),
+    sourceCaptureMethod: "telegram_public_post_html",
+    sourceExcerptVerified: true,
+    sourceEvidenceSignature: String(signature || "").trim().toLowerCase()
+  };
+}
+
 function parseJsonSafe(value) {
   try { return JSON.parse(value); } catch (_) { return null; }
 }
@@ -300,6 +321,24 @@ export default {
       var path = url.pathname;
       var method = request.method;
       if (method === "OPTIONS") return new Response(null, { headers: CORS });
+
+      // Fixed-fixture HMAC interoperability check. Only immutable version Preview
+      // hostnames are accepted; this path reads no KV/D1 state and exposes no key.
+      if (path === "/__preview/hmac-verify") {
+        if (!/^[0-9a-f]{8}-goldstar-financial-v3\\.goldstar-nsl83\\.workers\\.dev$/i.test(url.hostname)) {
+          return err("Preview-only diagnostic", 404);
+        }
+        if (method !== "POST") return err("Method not allowed", 405);
+        let input;
+        try { input = await boundedJson(request, 1024); }
+        catch (inputError) { return err(inputError.message || "Invalid request", inputError.status || 400); }
+        if (!input || typeof input.signature !== "string" || Object.keys(input).length !== 1) {
+          return err("Only a single signature field is accepted", 400);
+        }
+        const sample = await buildPreviewHmacParityRule(input.signature);
+        const signatureValid = await hasVerifiedRuleEvidence(sample, env);
+        return ok({ ok: true, signatureValid: signatureValid });
+      }
 
       var bridgeKey = request.headers.get("X-Goldstar-Bridge-Key");
       // API keys are accepted only in headers; query-string credentials can leak through logs and history.
