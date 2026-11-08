@@ -92,6 +92,8 @@ function makeDb(options = {}) {
             }
             return null;
           }
+          if (sql.includes("FROM mt5_terminal_snapshots") && sql.includes("COUNT(*)")) return options.mt5Status || { snapshot_count: 0, last_received_at: null };
+          if (sql.includes("FROM mt5_terminal_snapshots")) return options.mt5Snapshot || null;
           if (sql.includes("FROM tv_events")) {
             return { event_count: events.length, last_received_at: events[0]?.received_at || null };
           }
@@ -104,6 +106,8 @@ function makeDb(options = {}) {
           return null;
         },
         async all() {
+          if (sql.includes("FROM mt5_positions")) return { results: options.mt5Positions || [] };
+          if (sql.includes("FROM mt5_symbol_ticks")) return { results: options.mt5Ticks || [] };
           return { results: events.slice(0, Number(args[4] || 100)) };
         }
       };
@@ -246,6 +250,38 @@ test("general API key cannot approve NDS rules", async () => {
   assert.equal(response.status, 403);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
+});
+
+test("MT5 snapshot routes are L1-only and expose only the latest demo snapshot", async () => {
+  const state = makeEnv({ dbOptions: {
+    mt5Status: { snapshot_count: 3, last_received_at: "2026-11-08T09:00:00.000Z" },
+    mt5Snapshot: { snapshot_id: "snap-1", received_at: "2026-11-08T09:00:00.000Z", account_login: "12345678", account_server: "AMarkets-Demo", currency: "USD", leverage: 100, balance: 1000, equity: 1010, margin: 10, free_margin: 1000, margin_level: 10100, terminal_connected: 1, trade_allowed: 1, positions_count: 1, ticks_count: 1, payload_json: "{}" },
+    mt5Positions: [{ position_ticket: "987654321", symbol: "EURUSD", position_type: "BUY", volume: 0.1 }],
+    mt5Ticks: [{ symbol: "EURUSD", bid: 1.08, ask: 1.081, last_price: 1.0805, time_msc: 1794128400000 }]
+  }});
+  const unauthorized = await worker.fetch(makeRequest("/mt5/status", undefined, { "X-API-Key": "general-api-key" }), state.env, ctx);
+  assert.equal(unauthorized.status, 403);
+  const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
+  const status = await worker.fetch(makeRequest("/mt5/status", undefined, headers), state.env, ctx);
+  assert.equal(status.status, 200);
+  const statusBody = await status.json();
+  assert.equal(statusBody.mode, "demo_read_only");
+  assert.equal(statusBody.available, true);
+  assert.equal(statusBody.snapshot_count, 3);
+  const latest = await worker.fetch(makeRequest("/mt5/latest", undefined, headers), state.env, ctx);
+  assert.equal(latest.status, 200);
+  const latestBody = await latest.json();
+  assert.equal(latestBody.snapshot.snapshot_id, "snap-1");
+  assert.equal(latestBody.positions.length, 1);
+  assert.equal(latestBody.ticks.length, 1);
+});
+
+test("MT5 snapshot routes fail closed when research D1 is missing", async () => {
+  const state = makeEnv({ withMarketDb: false });
+  const response = await worker.fetch(makeRequest("/mt5/status", undefined, {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 503);
 });
 
 test("MQL5 proxy requires L1 bridge authentication, even with general API key", async () => {
