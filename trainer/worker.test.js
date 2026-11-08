@@ -37,8 +37,23 @@ test("accepts explicit NDS methodology anchors", () => {
   assert.equal(isNdsRelevantText(long("A 123Flag forms after the Hook-Hook-Rally sequence and a low-volume spike.")), true);
 });
 
-test("accepts NDS-specific component combinations", () => {
-  assert.equal(isNdsRelevantText(long("The positive Hook contains three Nodes, followed by a Rally and a Flag.")), true);
+test("rejects lexical co-occurrence without NDS relationships", () => {
+  assert.equal(isNdsRelevantText(long("Nodes, hooks, flags, rally, drop, sequence, fractal, symmetry and cycle are all words used in financial markets.")), false);
+  assert.equal(isNdsRelevantText(long("A rally follows a resistance break, while a flag appears near a fractal support zone and a symmetry level.")), false);
+});
+
+test("accepts linked NDS structural relationships", () => {
+  assert.equal(isNdsRelevantText(long("The Hook contains three Nodes, then the next Rally follows the completed Hook structure and the sequence ends with a Flag.")), true);
+  assert.equal(isNdsRelevantText(long("The parent Node defines the child Node priority; the Hook then precedes the Rally before the Flag closes the cycle.")), true);
+});
+
+test("accepts Persian NDS relationships after Unicode and digit normalization", () => {
+  assert.equal(isNdsRelevantText(long("در ساختار NDS، هوک پس از تشکیل گره‌ها شکل می‌گیرد؛ سپس رالی ایجاد می‌شود و پس از آن فلگ پایان چرخه را مشخص می‌کند.")), true);
+  assert.equal(isNdsRelevantText(long("در این روش، گره والد اولویت گره فرزند را تعیین می‌کند و هوک پس از آن به رالی منتهی می‌شود.")), true);
+});
+
+test("rejects generic ICT vocabulary padded with NDS-like words", () => {
+  assert.equal(isNdsRelevantText(long("Liquidity and order blocks are discussed with Nodes, Flags, Rally, Sequence and Fractal terms, but no structural NDS relationship is described.")), false);
 });
 
 test("accepts Persian NDS terminology", () => {
@@ -64,7 +79,7 @@ test("public preview dry-run endpoint is fetch-only and never calls AI or writes
     }
   };
   try {
-    const request = new Request("https://goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/dry-run");
+    const request = new Request("https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/dry-run");
     const response = await worker.fetch(request, env);
     assert.equal(response.status, 200);
     const result = await response.json();
@@ -83,7 +98,7 @@ test("candidate preview hostname can access the fetch-only parser diagnostics", 
   const html = '<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/126"><div class="tgme_widget_message_text">A long public Telegram sample containing Nodal Displacement Sequencing, Hook, Flag and Rally structural terms for the parser smoke test.</div></div></div>';
   globalThis.fetch = async () => new Response(html, { status: 200, headers: { "content-type": "text/html" } });
   try {
-    const request = new Request("https://nds-gate-v12-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/dry-run");
+    const request = new Request("https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/dry-run");
     const response = await worker.fetch(request, { KNOWLEDGE: { async get() { return null; }, async put() { throw new Error("must not write"); } }, AI: { async run() { throw new Error("must not call AI"); } } });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).fetchOnly, true);
@@ -151,6 +166,41 @@ test("scheduled training refuses to run or write candidates without the signing 
   try {
     await worker.scheduled({}, env);
     assert.deepEqual(calls, { reads: 0, writes: 1, ai: 0, fetch: 0 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("immutable V17 preview hostname serves parser and source diagnostics without writes", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = { ai: 0, writes: 0, fetch: 0 };
+  globalThis.fetch = async () => {
+    calls.fetch++;
+    return new Response("<html><body>No public posts</body></html>", { status: 200, headers: { "content-type": "text/html" } });
+  };
+  const env = {
+    KNOWLEDGE: {
+      async get() { return null; },
+      async put() { calls.writes++; }
+    },
+    AI: { async run() { calls.ai++; throw new Error("diagnostics must not call AI"); } }
+  };
+  try {
+    const base = "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev";
+    const parser = await worker.fetch(new Request(base + "/__preview/parser-selftest"), env);
+    assert.equal(parser.status, 200);
+    assert.equal((await parser.json()).success, true);
+
+    const diagnostics = await worker.fetch(new Request(base + "/__preview/source-diagnostics"), env);
+    assert.equal(diagnostics.status, 200);
+    const result = await diagnostics.json();
+    assert.equal(result.dryRun, true);
+    assert.equal(result.persisted, false);
+    assert.equal(result.aiCalled, false);
+    assert.equal(result.channels.length, 8);
+    assert.equal(calls.ai, 0);
+    assert.equal(calls.writes, 0);
+    assert.equal(calls.fetch, 8);
   } finally {
     globalThis.fetch = originalFetch;
   }
