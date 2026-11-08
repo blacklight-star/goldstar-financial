@@ -22,7 +22,7 @@ const TGME_ARCHIVE_POSTS = [
   ["934", "57"], ["933", "56"], ["931", "55"], ["930", "54"],
   ["929", "53"], ["926", "52"], ["924", "50"], ["922", "49"],
   ["921", "48"], ["919", "47"], ["907", "45"], ["906", "44"],
-  ["905", "43"], ["889", "summary-4"], ["888", "summary-3"]
+  ["905", "43"]
 ].map(([postId, lesson]) => ({
   url: "https://tg.me/fuzzylogic_nds/" + postId,
   name: "FuzzyLogic_NDS_TGME_" + postId,
@@ -32,18 +32,15 @@ const TGME_ARCHIVE_POSTS = [
   canonicalPostUrl: "https://t.me/fuzzylogic_nds/" + postId,
   sourceOriginType: "third_party_telegram_archive",
   sourceCaptureMethod: "tgme_public_post_html",
-  sourceRole: "historical_post_mirror",
-  ingestionEnabled: true
+  sourceRole: "catalog_metadata_only_transcript_required",
+  ingestionEnabled: false
 }));
-const INGESTION_SOURCES = [
-  ...CHANNELS.map(channel => ({
-    ...channel,
-    sourceType: "telegram",
-    sourceOriginType: "official_telegram_channel",
-    sourceCaptureMethod: "telegram_public_post_html"
-  })),
-  ...TGME_ARCHIVE_POSTS.filter(source => source.ingestionEnabled === true)
-];
+const INGESTION_SOURCES = CHANNELS.map(channel => ({
+  ...channel,
+  sourceType: "telegram",
+  sourceOriginType: "official_telegram_channel",
+  sourceCaptureMethod: "telegram_public_post_html"
+}));
 const DIAGNOSTIC_CHANNELS = [
   ...CHANNELS,
   { url: "https://t.me/s/NDSsystem", name: "NDSsystem", diagnosticOnly: true },
@@ -628,6 +625,9 @@ async function readTgmeArchivePost(source) {
       canonicalPostUrl: source.canonicalPostUrl,
       lesson: source.lesson,
       textLength: text.length,
+      videoTagCount: (html.match(/<video\\b/gi) || []).length,
+      videoSourceCount: (html.match(/<source\\b[^>]+src=/gi) || []).length,
+      directMediaUrlCount: (html.match(/https?:\\/\\/[^"'\\s>]+\\.(?:mp4|m3u8|webm)(?:\\?[^"'\\s>]*)?/gi) || []).length,
       sourceOriginType: source.sourceOriginType,
       sourceCaptureMethod: source.sourceCaptureMethod
     }
