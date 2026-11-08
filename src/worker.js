@@ -275,15 +275,37 @@ export default {
         var k2 = await getRules(env);
         var pendingProgress = await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" });
         if (pendingProgress !== null && !Array.isArray(pendingProgress)) return err("Pending NDS store has invalid shape", 500);
-        return ok({ ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length, approvedTotal: k2.all.length, legacy: k2.legacy, pendingNDS: pendingProgress === null ? 0 : pendingProgress.length });
+        var pendingEntries = pendingProgress === null ? [] : pendingProgress;
+        var pendingRuleEntries = pendingEntries.filter(function(rule) { return rule && rule.contentType === "trading_rule"; });
+        var pendingEligibility = await Promise.all(pendingRuleEntries.map(hasVerifiedRuleEvidence));
+        return ok({
+          ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length,
+          approvedTotal: k2.all.length, legacy: k2.legacy,
+          pendingNDS: pendingRuleEntries.length,
+          pendingNDSNonRule: pendingEntries.length - pendingRuleEntries.length,
+          pendingNDSApprovalEligible: pendingEligibility.filter(Boolean).length
+        });
       }
 
       if (path === "/training/pending" && method === "GET") {
         var pendingRaw = await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json", cacheTtl: KV_CACHE_TTL });
-        var pendingRules = pendingRaw === null ? [] : pendingRaw;
-        if (!Array.isArray(pendingRules)) return err("Pending NDS store has invalid shape", 500);
+        var pendingEntries = pendingRaw === null ? [] : pendingRaw;
+        if (!Array.isArray(pendingEntries)) return err("Pending NDS store has invalid shape", 500);
+        var pendingRuleEntries = pendingEntries.filter(function(rule) { return rule && rule.contentType === "trading_rule"; });
+        var pendingEligibility = await Promise.all(pendingRuleEntries.map(hasVerifiedRuleEvidence));
+        var reviewRules = pendingRuleEntries.map(function(rule, index) {
+          return Object.assign({}, rule, { approvalEligible: pendingEligibility[index] });
+        });
         var limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") || 10)));
-        return ok({ status: "pending_review", count: pendingRules.length, returned: Math.min(limit, pendingRules.length), rules: pendingRules.slice(0, limit) });
+        return ok({
+          status: "pending_review",
+          count: reviewRules.length,
+          totalPendingEntries: pendingEntries.length,
+          excludedNonRuleCount: pendingEntries.length - reviewRules.length,
+          approvalEligibleCount: pendingEligibility.filter(Boolean).length,
+          returned: Math.min(limit, reviewRules.length),
+          rules: reviewRules.slice(0, limit)
+        });
       }
 
       if (path === "/training/approve" && method === "POST" && !validBridge) return err("L1 bridge authorization required", 403);
