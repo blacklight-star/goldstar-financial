@@ -45,7 +45,7 @@ The latest Preview CI confirms:
 - The strict official Telegram source gate still fails as intended: NDS4ALLVIDEOS returned 20 posts; FuzzyLogic_NDS, BNJ1I, and cottagends returned zero parsed posts. One diagnostic-only source returned 3 posts, but diagnostic-only sources cannot substitute for configured official sources.
 
 CI run:
-- [Trainer V26 source gate](https://github.com/blacklight-star/goldstar-financial/actions/runs/42533383964) — unit tests and health/parser/HMAC/TG.ME metadata checks passed; final strict configured-source gate remains red because three official Telegram archives are unavailable.
+- [Trainer V26 source gate](https://github.com/blacklight-star/goldstar-financial/actions/runs/42533488887) — unit tests and health/parser/HMAC/TG.ME metadata checks passed; final strict configured-source gate remains red because three official Telegram archives are unavailable.
 - [Financial L2 V35 CI](https://github.com/blacklight-star/goldstar-financial/actions/runs/42533340596) — 75/75 tests and all immutable Preview health checks passed.
 
 No AI calls, KV/D1 writes, training, approvals, Cron changes, active deployments, or Production changes were performed. Trainer Staging Cron remains empty; Trainer Staging active deployment remains V9; L2 active deployment remains the pre-existing version. All new Worker versions are Preview-only.
