@@ -124,6 +124,8 @@ async function ai(env, prompt) {
   }
 }
 
+const NDS_ONLY_MODE = true;
+
 async function getRules(env) {
   // A missing key is a valid empty store; a KV read failure is not.
   // Never turn an unavailable knowledge store into an apparently empty/healthy state.
@@ -139,7 +141,7 @@ async function getRules(env) {
   var approved = function(list) { return list.filter(function(rule) { return rule && rule.validationStatus === "approved"; }); };
   var ai = approved(i); var ar = approved(r); var an = approved(n);
   var legacy = { ict: i.length - ai.length, rtm: r.length - ar.length, nds: n.length - an.length };
-  return { ict: ai, rtm: ar, nds: an, all: ai.concat(ar, an), legacy: legacy, legacyTotal: legacy.ict + legacy.rtm + legacy.nds };
+  return { ict: ai, rtm: ar, nds: an, all: NDS_ONLY_MODE ? an : ai.concat(ar, an), activeStyles: NDS_ONLY_MODE ? ["NDS"] : ["ICT", "RTM", "NDS"], legacy: legacy, legacyTotal: legacy.ict + legacy.rtm + legacy.nds };
 }
 
 function parseStrategyRecord(raw) {
@@ -354,7 +356,7 @@ export default {
         var strategyRecord = parseStrategyRecord(strat);
         var strategyReady = await isApprovedStrategy(strat, k.all);
         var strategyStatus = strategyReady ? "approved" : (strategyRecord ? (strategyRecord.status || "unapproved") : (strat ? "legacy_unverified" : "not_created"));
-        return ok({ totalRules: k.all.length, approvedRules: k.all.length, legacyRules: k.legacyTotal, legacy: k.legacy, strategyReady: strategyReady, strategyStatus: strategyStatus, analysisEnabled: MARKET_ANALYSIS_ENABLED, ict: k.ict.length, rtm: k.rtm.length, nds: k.nds.length });
+        return ok({ totalRules: k.all.length, approvedRules: k.all.length, legacyRules: k.legacyTotal, legacy: k.legacy, strategyReady: strategyReady, strategyStatus: strategyStatus, analysisEnabled: MARKET_ANALYSIS_ENABLED, trainingMode: NDS_ONLY_MODE ? "NDS_ONLY" : "MULTI_STYLE", activeTrainingStyles: k.activeStyles, ict: k.ict.length, rtm: k.rtm.length, nds: k.nds.length });
       }
 
       if (path === "/training/load-prebuilt" && method === "POST") {
