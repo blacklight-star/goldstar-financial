@@ -23,3 +23,6 @@ database_id = "274a18a3-0d7e-402c-9ae8-904aa16cd0ff"
 binding = "MARKET_DB"
 database_name = "goldstar_market_research_staging"
 database_id = "e5978640-6035-41fe-8947-4e6fc58c5a92"
+
+[secrets]
+required = ["API_KEY", "L1_BRIDGE_KEY", "NDS_EVIDENCE_HMAC_KEY"]
