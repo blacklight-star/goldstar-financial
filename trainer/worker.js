@@ -505,7 +505,8 @@ async function readAcademiaDocument(env, source) {
   const finalUrl = new URL(response.url || source.url);
   if (!response.ok) throw new Error("Academia HTTP " + response.status);
   if (!["academia.edu", "www.academia.edu"].includes(finalUrl.hostname) ||
-      finalUrl.pathname.split("/")[1] !== source.documentId) {
+      finalUrl.pathname.split("/")[1] !== source.documentId ||
+      finalUrl.pathname.replace(/\\/$/, "") !== requested.pathname.replace(/\\/$/, "")) {
     throw new Error("Academia redirected outside the allowlisted document identity");
   }
   const html = await response.text();
@@ -560,7 +561,12 @@ function buildPromptPosts(eligiblePosts) {
       .map(segment => segment.trim())
       .filter(segment => segment.length >= 60 &&
         /\b(?:NDS|nodal|node|hook|rally|flag|cycle|fractal|symmetry|sequenc|trading rule|stop.?loss|time.?frame)\b/i.test(segment));
-    const unique = Array.from(new Set(segments)).slice(0, 12);
+    const deduplicated = Array.from(new Set(segments));
+    const unique = deduplicated.length <= 12
+      ? deduplicated
+      : Array.from({ length: 12 }, (_, index) =>
+          deduplicated[Math.round(index * (deduplicated.length - 1) / 11)]
+        );
     return (unique.length ? unique : [post.text.slice(0, 1000)])
       .map(text => ({ sourcePostId: post.sourcePostId, text: text.slice(0, 1000) }));
   });
