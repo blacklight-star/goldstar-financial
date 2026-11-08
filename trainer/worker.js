@@ -510,7 +510,7 @@ async function readAcademiaDocument(env, source) {
   }
   const html = await response.text();
   const text = extractAcademiaDocumentText(html);
-  const pageTitle = ((html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i) || [])[1] || "").replace(/<[^>]+>/g, " ").trim();
+  const pageTitle = ((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "").replace(/<[^>]+>/g, " ").trim();
   if (text.length < 1200) throw new Error("Academia page did not expose enough document text for source verification");
   if (!/NDS Strategy English Version/i.test(pageTitle + " " + text.slice(0, 1200)) ||
       !/Iraj Jafarian/i.test(text)) {
@@ -556,10 +556,10 @@ function buildPromptPosts(eligiblePosts) {
     if (post.sourceCaptureMethod !== "academia_author_published_document_html") {
       return [{ sourcePostId: post.sourcePostId, text: post.text.slice(0, 1600) }];
     }
-    const segments = post.text.split(/\\n+/)
+    const segments = post.text.split(/\n+/)
       .map(segment => segment.trim())
       .filter(segment => segment.length >= 60 &&
-        /\\b(?:NDS|nodal|node|hook|rally|flag|cycle|fractal|symmetry|sequenc|trading rule|stop.?loss|time.?frame)\\b/i.test(segment));
+        /\b(?:NDS|nodal|node|hook|rally|flag|cycle|fractal|symmetry|sequenc|trading rule|stop.?loss|time.?frame)\b/i.test(segment));
     const unique = Array.from(new Set(segments)).slice(0, 12);
     return (unique.length ? unique : [post.text.slice(0, 1000)])
       .map(text => ({ sourcePostId: post.sourcePostId, text: text.slice(0, 1000) }));
