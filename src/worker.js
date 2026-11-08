@@ -468,10 +468,10 @@ export default {
       }
 
       if (path === "/market-data/status" && method === "GET") {
-        if (!env.DB || typeof env.DB.prepare !== "function") return err("Market-data D1 binding unavailable", 503);
+        if (!env.MARKET_DB || typeof env.MARKET_DB.prepare !== "function") return err("Dedicated market-data D1 binding unavailable", 503);
         try {
-          var rawStatus = await env.DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM tv_events").first();
-          var normalizedStatus = await env.DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM gs_market_events").first();
+          var rawStatus = await env.MARKET_DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM tv_events").first();
+          var normalizedStatus = await env.MARKET_DB.prepare("SELECT COUNT(*) AS event_count, MAX(received_at) AS last_received_at FROM gs_market_events").first();
           var rawEventCount = Number(rawStatus && rawStatus.event_count || 0);
           var normalizedEventCount = Number(normalizedStatus && normalizedStatus.event_count || 0);
           return ok({
@@ -490,13 +490,13 @@ export default {
       }
 
       if (path === "/market-data/latest" && method === "GET") {
-        if (!env.DB || typeof env.DB.prepare !== "function") return err("Market-data D1 binding unavailable", 503);
+        if (!env.MARKET_DB || typeof env.MARKET_DB.prepare !== "function") return err("Dedicated market-data D1 binding unavailable", 503);
         var requestedLimit = Number(url.searchParams.get("limit") || 25);
         var marketLimit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, Math.floor(requestedLimit))) : 25;
         var marketSymbol = String(url.searchParams.get("symbol") || "").trim().slice(0, 100);
         var marketTimeframe = String(url.searchParams.get("timeframe") || "").trim().slice(0, 40);
         try {
-          var marketResult = await env.DB.prepare(
+          var marketResult = await env.MARKET_DB.prepare(
             "SELECT id, event_hash, received_at, symbol, exchange_name, timeframe, event_type, payload_json FROM tv_events WHERE (? = '' OR UPPER(symbol) = UPPER(?)) AND (? = '' OR UPPER(timeframe) = UPPER(?)) ORDER BY received_at DESC LIMIT ?"
           ).bind(marketSymbol, marketSymbol, marketTimeframe, marketTimeframe, marketLimit).all();
           var marketEvents = (marketResult && Array.isArray(marketResult.results) ? marketResult.results : []).map(function(row) {
