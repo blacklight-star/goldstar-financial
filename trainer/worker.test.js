@@ -394,76 +394,47 @@ test("Preview-only fixed HMAC sample signs the cross-worker fixture without AI o
 });
 
 
-test("author-linked Academia NDS archive is fetched with independent provenance and no side effects", async () => {
+test("Academia is catalogued as the primary author source with first-party PDF acquisition only", async () => {
   const originalFetch = globalThis.fetch;
   const calls = { fetch: 0, ai: 0, writes: 0 };
-  const paragraphs = Array.from({ length: 18 }, (_, i) =>
-    `Section ${i + 1}. Nodal Displacement Sequencing defines nodes, cycles, positive and negative hooks, rallies, flags, market symmetry, fractal structure and ordered sequencing. The author describes how a higher timeframe determines direction while lower timeframes close subordinate cycles. Rules require a meaningful stop loss and distinguish the last N1 and N2 nodes. `
-  ).join("\n");
-  const html = `<html><head><title>NDS Strategy English Version</title><script>ignored secret text</script></head><body><nav>site navigation</nav><main><article><h1>NDS Strategy English Version</h1><p>Dr Iraj Jafarian</p><p>${paragraphs}</p></article></main></body></html>`;
-  globalThis.fetch = async url => {
+  globalThis.fetch = async () => {
     calls.fetch++;
-    assert.equal(String(url), "https://www.academia.edu/129627974/NDS_Strategy_English_Version");
-    return new Response(html, { status: 200, headers: { "content-type": "text/html" } });
+    throw new Error("Automated Academia access must not be attempted");
   };
   const env = {
     KNOWLEDGE: { async get() { return null; }, async put() { calls.writes++; } },
-    AI: { async run() { calls.ai++; throw new Error("diagnostics must not invoke AI"); } }
+    AI: { async run() { calls.ai++; throw new Error("Catalog route must not invoke AI"); } }
   };
   try {
     const response = await worker.fetch(new Request(
-      "https://deadbeef-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/independent-archive-diagnostics"
+      "https://deadbeef-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/primary-source-catalog"
     ), env);
     const result = await response.json();
     assert.equal(response.status, 200);
     assert.equal(result.ok, true);
     assert.equal(result.dryRun, true);
+    assert.equal(result.fetchedFromAcademia, false);
     assert.equal(result.persisted, false);
     assert.equal(result.aiCalled, false);
-    assert.equal(result.sources.length, 1);
-    assert.equal(result.sources[0].success, true);
-    assert.equal(result.sources[0].documentId, "129627974");
-    assert.equal(result.sources[0].sourceOriginType, "author_linked_independent_platform");
-    assert.equal(result.sources[0].sourceCaptureMethod, "academia_author_published_document_html");
-    assert.ok(result.sources[0].textLength >= 1200);
-    assert.equal(calls.fetch, 1);
+    assert.equal(result.sources.length, 5);
+    const english = result.sources.find(source => source.documentId === "129627974");
+    const farsi = result.sources.find(source => source.documentId === "129628090");
+    assert.ok(english);
+    assert.ok(farsi);
+    assert.equal(english.authorityTier, "primary");
+    assert.equal(english.sourceOriginType, "primary_author_published_source");
+    assert.equal(english.sourceCaptureMethod, "academia_account_pdf_download");
+    assert.equal(english.format, "application/pdf");
+    assert.equal(english.automatedSiteAccessAllowed, false);
+    assert.equal(english.acquisitionMode, "user_initiated_first_party_download");
+    assert.equal(farsi.authorityTier, "primary");
+    assert.equal(calls.fetch, 0);
     assert.equal(calls.ai, 0);
     assert.equal(calls.writes, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
-
-test("author-linked Academia archive rejects redirects outside the exact allowlisted document", async () => {
-  const originalFetch = globalThis.fetch;
-  const calls = { ai: 0, writes: 0 };
-  globalThis.fetch = async () => ({
-    ok: true,
-    status: 200,
-    url: "https://evil.example/129627974/NDS_Strategy_English_Version",
-    redirected: true,
-    async text() { return "<html><body>" + "NDS text ".repeat(300) + "</body></html>"; }
-  });
-  const env = {
-    KNOWLEDGE: { async get() { return null; }, async put() { calls.writes++; } },
-    AI: { async run() { calls.ai++; } }
-  };
-  try {
-    const response = await worker.fetch(new Request(
-      "https://deadbeef-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/independent-archive-diagnostics"
-    ), env);
-    const result = await response.json();
-    assert.equal(response.status, 200);
-    assert.equal(result.ok, false);
-    assert.equal(result.sources[0].success, false);
-    assert.match(result.sources[0].error, /redirected outside/);
-    assert.equal(calls.ai, 0);
-    assert.equal(calls.writes, 0);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
 
 test("TG.ME independent archive preserves the canonical Telegram post ID and has no side effects", async () => {
   const originalFetch = globalThis.fetch;
