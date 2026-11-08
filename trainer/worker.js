@@ -625,9 +625,9 @@ async function readTgmeArchivePost(source) {
       canonicalPostUrl: source.canonicalPostUrl,
       lesson: source.lesson,
       textLength: text.length,
-      videoTagCount: (html.match(/<video\\b/gi) || []).length,
-      videoSourceCount: (html.match(/<source\\b[^>]+src=/gi) || []).length,
-      directMediaUrlCount: (html.match(/https?:\\/\\/[^"'\\s>]+\\.(?:mp4|m3u8|webm)(?:\\?[^"'\\s>]*)?/gi) || []).length,
+      videoTagCount: (html.match(/<video\b/gi) || []).length,
+      videoSourceCount: (html.match(/<source\b[^>]+src=/gi) || []).length,
+      directMediaUrlCount: (html.match(/https?:\/\/[^"'\s>]+\.(?:mp4|m3u8|webm)(?:\?[^"'\s>]*)?/gi) || []).length,
       sourceOriginType: source.sourceOriginType,
       sourceCaptureMethod: source.sourceCaptureMethod
     }
