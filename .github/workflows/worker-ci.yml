@@ -29,11 +29,11 @@ jobs:
               const data = JSON.parse(process.env.RESPONSE);
               let ok = false;
               switch (process.env.CHECK_NAME) {
-                case "Financial L2 V29":
+                case "Financial L2 V30":
                   ok = data.status === "ok" && data.analysisEnabled === false;
                   break;
-                case "MQL5 V4":
-                  ok = data.ok === true && data.mql5_configured === true && data.database_configured === true;
+                case "MQL5/MT5 V5":
+                  ok = data.ok === true && data.mql5_configured === true && data.mt5_demo_bridge_configured === true && data.database_configured === true && data.mode === "demo_read_only";
                   break;
                 case "MT5 V5":
                   ok = data.ok === true && data.mt5_demo_bridge_configured === true && data.database_configured === true && data.mode === "demo_read_only";
@@ -46,7 +46,6 @@ jobs:
               console.log(process.env.CHECK_NAME + " preview health OK");
             '
           }
-          check_json "Financial L2 V29" "https://05804278-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
-          check_json "MQL5 V4" "https://4003ef9a-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
-          check_json "MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
+          check_json "Financial L2 V30" "https://f43412bc-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
+          check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
