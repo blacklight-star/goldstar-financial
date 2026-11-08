@@ -33,6 +33,40 @@ async function body(req) {
     throw new Error("JSON invalid");
   }
 }
+async function boundedJson(req, maxBytes) {
+  var declared = Number(req.headers.get("content-length") || 0);
+  if (declared > maxBytes) {
+    var sizeError = new Error("Payload too large");
+    sizeError.status = 413;
+    throw sizeError;
+  }
+  if (!req.body) return {};
+  var reader = req.body.getReader();
+  var chunks = [];
+  var total = 0;
+  while (true) {
+    var part = await reader.read();
+    if (part.done) break;
+    total += part.value.byteLength;
+    if (total > maxBytes) {
+      try { await reader.cancel(); } catch (_) {}
+      var streamError = new Error("Payload too large");
+      streamError.status = 413;
+      throw streamError;
+    }
+    chunks.push(part.value);
+  }
+  var bytes = new Uint8Array(total);
+  var offset = 0;
+  for (var i = 0; i < chunks.length; i++) {
+    bytes.set(chunks[i], offset);
+    offset += chunks[i].byteLength;
+  }
+  var raw = new TextDecoder().decode(bytes);
+  if (!raw.trim()) return {};
+  try { return JSON.parse(raw); }
+  catch (_) { throw new Error("JSON invalid"); }
+}
 function extractJSON(t) {
   if (!t) return null;
   try { return JSON.parse(t); } catch (e) {}
@@ -272,10 +306,42 @@ export default {
 
       if (path === "/health") return ok({ status: "ok", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED });
 
+      if (path === "/mql5/tools" || path === "/mql5/call") {
+        if (method !== "POST") return err("Method not allowed", 405);
+        if (!validBridge) return err("L1 bridge authentication required", 403);
+        if (!env.MQL5_GATEWAY_API_KEY || !env.MQL5_GATEWAY_URL) return err("MQL5 gateway is not configured", 503);
+        var mql5Input;
+        try { mql5Input = await boundedJson(request, 8192); }
+        catch (inputError) { return err(inputError.message || "Invalid request", inputError.status || 400); }
+        if (!mql5Input || typeof mql5Input !== "object" || Array.isArray(mql5Input)) return err("JSON object required", 400);
+        if (path === "/mql5/call" && (typeof mql5Input.name !== "string" || !mql5Input.name.startsWith("marketdata_"))) {
+          return err("Only read-only marketdata_* tools are permitted", 400);
+        }
+        try {
+          var gatewayUrl = new URL(env.MQL5_GATEWAY_URL);
+          if (gatewayUrl.protocol !== "https:") return err("MQL5 gateway URL must use HTTPS", 503);
+          var upstream = await fetch(gatewayUrl.origin + gatewayUrl.pathname.replace(/\/$/, "") + path, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer " + env.MQL5_GATEWAY_API_KEY
+            },
+            body: JSON.stringify(mql5Input)
+          });
+          var upstreamText = await upstream.text();
+          var upstreamData;
+          try { upstreamData = JSON.parse(upstreamText); }
+          catch (_) { return err("MQL5 gateway returned invalid JSON", 502); }
+          return ok(upstreamData, upstream.status);
+        } catch (gatewayError) {
+          return err("MQL5 gateway request failed", 502);
+        }
+      }
+
       if (path === "/") return ok({
         name: "Goldstar L2", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED, analysisMode: "disabled_until_verified_market_data",
         styles: ["ICT", "RTM", "NDS"],
-        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/market-data/status","/market-data/latest","/analyze"]
+        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/market-data/status","/market-data/latest","/mql5/tools","/mql5/call","/analyze"]
       });
 
       if (path === "/status") {
