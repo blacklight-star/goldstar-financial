@@ -341,7 +341,7 @@ export default {
       if (path === "/") return ok({
         name: "Goldstar L2", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED, analysisMode: "disabled_until_verified_market_data",
         styles: ["ICT", "RTM", "NDS"],
-        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/market-data/status","/market-data/latest","/mql5/tools","/mql5/call","/analyze"]
+        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/market-data/status","/market-data/latest","/mql5/tools","/mql5/call","/mt5/status","/mt5/latest","/analyze"]
       });
 
       if (path === "/status") {
@@ -598,6 +598,43 @@ export default {
           env.STRATEGY.put("strategy_updated", candidate.generatedAt)
         ]));
         return ok({ success: true, status: "candidate_unvalidated", approved: false, strategyLength: strategy.length, ruleCount: strategyRules.length, totalApprovedRules: k3.all.length, sourceRulesHash: sourceRulesHash, strategy: strategy });
+      }
+
+      if (path === "/mt5/status") {
+        if (method !== "GET") return err("Method not allowed", 405);
+        if (!validBridge) return err("L1 bridge authentication required", 403);
+        if (!env.MARKET_DB) return err("Market research database unavailable", 503);
+        var mt5Status = await env.MARKET_DB.prepare("SELECT COUNT(*) AS snapshot_count, MAX(received_at) AS last_received_at FROM mt5_terminal_snapshots").first();
+        var mt5Latest = await env.MARKET_DB.prepare("SELECT account_login, account_server, terminal_connected, trade_allowed, positions_count, ticks_count FROM mt5_terminal_snapshots ORDER BY received_at DESC LIMIT 1").first();
+        return ok({
+          mode: "demo_read_only",
+          available: !!mt5Latest,
+          snapshot_count: Number(mt5Status?.snapshot_count || 0),
+          last_received_at: mt5Status?.last_received_at || null,
+          account_login: mt5Latest?.account_login || null,
+          account_server: mt5Latest?.account_server || null,
+          terminal_connected: mt5Latest?.terminal_connected === 1,
+          trade_allowed: mt5Latest?.trade_allowed === 1,
+          positions_count: Number(mt5Latest?.positions_count || 0),
+          ticks_count: Number(mt5Latest?.ticks_count || 0)
+        });
+      }
+
+      if (path === "/mt5/latest") {
+        if (method !== "GET") return err("Method not allowed", 405);
+        if (!validBridge) return err("L1 bridge authentication required", 403);
+        if (!env.MARKET_DB) return err("Market research database unavailable", 503);
+        var mt5Snapshot = await env.MARKET_DB.prepare("SELECT snapshot_id, received_at, account_login, account_server, currency, leverage, balance, equity, margin, free_margin, margin_level, terminal_connected, trade_allowed, positions_count, ticks_count, payload_json FROM mt5_terminal_snapshots ORDER BY received_at DESC LIMIT 1").first();
+        if (!mt5Snapshot) return ok({ mode: "demo_read_only", available: false, snapshot: null, positions: [], ticks: [] });
+        var mt5Positions = await env.MARKET_DB.prepare("SELECT position_ticket, symbol, position_type, volume, price_open, price_current, stop_loss, take_profit, profit, swap, opened_at FROM mt5_positions WHERE snapshot_id = ? ORDER BY symbol, position_ticket").bind(mt5Snapshot.snapshot_id).all();
+        var mt5Ticks = await env.MARKET_DB.prepare("SELECT symbol, bid, ask, last_price, time_msc FROM mt5_symbol_ticks WHERE snapshot_id = ? ORDER BY symbol").bind(mt5Snapshot.snapshot_id).all();
+        return ok({
+          mode: "demo_read_only",
+          available: true,
+          snapshot: mt5Snapshot,
+          positions: mt5Positions.results || [],
+          ticks: mt5Ticks.results || []
+        });
       }
 
       if (path === "/market-data/status" && method === "GET") {
