@@ -1,4 +1,5 @@
 import test from "node:test";
+import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
 import worker, { isNdsRelevantText } from "./worker.js";
 
@@ -77,6 +78,52 @@ test("candidate preview hostname can access the fetch-only parser diagnostics", 
     const response = await worker.fetch(request, { KNOWLEDGE: { async get() { return null; }, async put() { throw new Error("must not write"); } }, AI: { async run() { throw new Error("must not call AI"); } } });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).fetchOnly, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Trainer signs exact source evidence with the shared HMAC key", async () => {
+  const rule = {
+    id: "nds_test",
+    contentType: "trading_rule",
+    sourcePostId: "123",
+    sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123",
+    sourceExcerptHash: "a".repeat(64),
+    sourcePostContentHash: "b".repeat(64),
+    sourceCaptureMethod: "telegram_public_post_html",
+    sourceExcerptVerified: true
+  };
+  const secret = "unit-test-nds-evidence-key-32-bytes-minimum";
+  const signature = await signSourceEvidence({ NDS_EVIDENCE_HMAC_KEY: secret }, rule);
+  const payload = {
+    id: rule.id,
+    contentType: rule.contentType,
+    sourcePostId: rule.sourcePostId,
+    sourcePostUrl: rule.sourcePostUrl,
+    sourceExcerptHash: rule.sourceExcerptHash,
+    sourcePostContentHash: rule.sourcePostContentHash,
+    sourceCaptureMethod: rule.sourceCaptureMethod,
+    sourceExcerptVerified: rule.sourceExcerptVerified
+  };
+  const expected = createHmac("sha256", secret).update(JSON.stringify(payload)).digest("hex");
+  assert.equal(signature, expected);
+});
+
+test("scheduled training refuses to run or write candidates without the signing key", async () => {
+  const calls = { reads: 0, writes: 0, ai: 0, fetch: 0 };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { calls.fetch++; throw new Error("should not fetch"); };
+  const env = {
+    KNOWLEDGE: {
+      async get() { calls.reads++; return null; },
+      async put(key, value) { calls.writes++; assert.equal(key, "trainer:last_run"); assert.match(value, /evidence_signing_key_missing/); }
+    },
+    AI: { async run() { calls.ai++; throw new Error("should not call AI"); } }
+  };
+  try {
+    await worker.scheduled({}, env);
+    assert.deepEqual(calls, { reads: 0, writes: 1, ai: 0, fetch: 0 });
   } finally {
     globalThis.fetch = originalFetch;
   }
