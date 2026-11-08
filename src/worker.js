@@ -325,7 +325,7 @@ export default {
       // Fixed-fixture HMAC interoperability check. Only immutable version Preview
       // hostnames are accepted; this path reads no KV/D1 state and exposes no key.
       if (path === "/__preview/hmac-verify") {
-        if (!/^[0-9a-f]{8}-goldstar-financial-v3\\.goldstar-nsl83\\.workers\\.dev$/i.test(url.hostname)) {
+        if (!/^[0-9a-f]{8}-goldstar-financial-v3\.goldstar-nsl83\.workers\.dev$/i.test(url.hostname)) {
           return err("Preview-only diagnostic", 404);
         }
         if (method !== "POST") return err("Method not allowed", 405);
