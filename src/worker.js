@@ -13,11 +13,36 @@ const NDS_CHANNELS = [
   {url:"https://t.me/s/BNJ1I",name:"BNJ1I"},
   {url:"https://t.me/s/cottagends",name:"cottagends"},
 ];
-const NDS_AUTHOR_LINKED_DOCUMENTS = new Map([
+const NDS_PRIMARY_AUTHOR_DOCUMENTS = new Map([
   ["129627974", {
     path: "/129627974/NDS_Strategy_English_Version",
-    sourceOriginType: "author_linked_independent_platform",
-    sourceCaptureMethod: "academia_author_published_document_html"
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    role: "primary_core_methodology"
+  }],
+  ["129628090", {
+    path: "/129628090/NDS_farsi",
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    role: "primary_core_methodology"
+  }],
+  ["122576333", {
+    path: "/122576333/Nodal_Displacement_Sequencing_NDS_New_Approach",
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    role: "primary_author_supplement"
+  }],
+  ["122966805", {
+    path: "/122966805/Advanced_Money_Management_Strategy_Applicable_to_Nodal_Displacement_Geometry",
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    role: "primary_author_supplement"
+  }],
+  ["122832409", {
+    path: "/122832409/Advanced_Quantitative_Trading_Integrating_Artificial_Intelligence_with_Nodal_Displacement_Sequencing",
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    role: "coauthored_author_supplement"
   }]
 ]);
 
@@ -236,13 +261,15 @@ async function hasVerifiedRuleEvidence(rule, env) {
       var telegramMatch = sourceUrl.pathname.match(/^\/s\/([A-Za-z0-9_]+)\/(\d+)$/);
       if (!telegramMatch || telegramMatch[2] !== sourcePostId) return false;
       if (!NDS_CHANNELS.some(function(channel) { return channel.name === telegramMatch[1]; })) return false;
-    } else if (captureMethod === "academia_author_published_document_html" &&
-        originType === "author_linked_independent_platform") {
-      var authorDoc = NDS_AUTHOR_LINKED_DOCUMENTS.get(sourcePostId);
+    } else if (captureMethod === "academia_account_pdf_download" &&
+        originType === "primary_author_published_source") {
+      var authorDoc = NDS_PRIMARY_AUTHOR_DOCUMENTS.get(sourcePostId);
       if (!authorDoc || !["academia.edu", "www.academia.edu"].includes(sourceUrl.hostname) ||
           sourceUrl.pathname.replace(/\/$/, "") !== authorDoc.path ||
           authorDoc.sourceOriginType !== originType ||
           authorDoc.sourceCaptureMethod !== captureMethod) return false;
+      if (String(rule.sourceDocumentFormat || "") !== "application/pdf" ||
+          String(rule.sourceDocumentSha256 || "").toLowerCase() !== contentHash) return false;
     } else {
       return false;
     }
