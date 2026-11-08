@@ -58,32 +58,40 @@ Do not remove the strict source gate to make CI green. Source replacement or alt
 
 ## Independent NDS source registry (2026-11-09)
 
-Independent-platform ingestion is separate from the four configured Telegram channels. It does not replace or silently reclassify them.
+These sources are indexed separately from the four configured Telegram channels. No independent archive silently replaces an official source.
 
-### Ingestion-enabled, author-linked source
+### 1. Academia — author-linked document, currently blocked for automated fetch
 
-- **NDS Strategy English Version** — Dr. Iraj Jafarian, Academia document 129627974.
-- Canonical URL: https://www.academia.edu/129627974/NDS_Strategy_English_Version
-- Origin type: **author_linked_independent_platform**.
-- Capture method: **academia_author_published_document_html**.
-- Basis: the public NDS Learning Hub Telegram post points readers to Dr. Jafarian's Academia profile for NDS articles; that profile lists this document under his papers. The document exposes definitions, the five NDS pillars, cycle structure, and trading-rule sections.
-- Scope: foundational NDS source material only. Author attribution is source provenance, **not independent validation of predictive performance**.
-- Intake requires the final URL to remain on Academia, the exact document ID and title/author identity to match the allowlist, and at least 1,200 characters of readable source text. Trainer records and signs the origin type and capture method; Financial L2 independently checks the exact document allowlist and signature.
+- **NDS Strategy English Version**, Dr. Iraj Jafarian; document ID `129627974`.
+- Provenance: `author_linked_independent_platform`.
+- Retrieval method: `academia_author_published_document_html`.
+- The official NDS Learning Hub channel points users to Dr. Jafarian's Academia profile, and the profile lists this document under his work. This supports author-linked attribution and NDS relevance, not independent validation of performance claims.
+- **Runtime result:** the Trainer Preview fetch returned HTTP 403. It is allowlisted as a catalogued author-linked source but is not currently ingestion-enabled.
 
-### Independent archive, cross-reference only
+### 2. TG.ME — individually indexed third-party mirror posts, metadata only
 
-- **Telemetr public archive for @fuzzylogic_nds** — https://telemetr.io/en/channels/1645847716-fuzzylogic_nds/posts
-- Origin type: **third_party_telegram_archive**.
-- Status: **catalog_only_not_ingestion_ready**.
-- Use: compare historical availability and identify missing lesson posts. It is a third-party copy, not the original author platform. Its currently verified archive view does not yet provide a stable, individually validated post identity suitable for the Trainer evidence chain; therefore it is not automatically ingested or approval-eligible.
+- Channel: `@fuzzylogic_nds` / NDS Learning Hub.
+- Provenance: `third_party_telegram_archive`.
+- Capture method: `tgme_public_post_html`.
+- TG.ME provides stable IDs and individual page permalinks that point back to original Telegram post URLs. It is a third-party presentation layer, not Telegram itself.
+- The current validation establishes post identity and caption/title metadata only. It does **not** establish access to the complete lesson video, transcript, or full teaching content. Therefore the source is indexed for cross-reference, but **not ingested into the Trainer's AI/rule-extraction pipeline and not eligible for L2 rule review or approval**.
+- Indexed post/lesson pairs: `983→65`, `972→64`, `967→63-2`, `965→63-1`, `958→62`, `944→61`, `937→60`, `936→59`, `935→58`, `934→57`, `933→56`, `931→55`, `930→54`, `929→53`, `926→52`, `924→50`, `922→49`, `921→48`, `919→47`, `907→45`, `906→44`, `905→43`.
+- Before any ingestion, each post still needs retrievable lesson media or a reliable transcript, content-hash capture, provenance validation, and L2 verifier support for the exact archive provenance.
 
-### Additional author-listed documents
+### 3. Telemetr — historical cross-reference only
 
-The Academia profile also lists NDS Farsi (document 129628090), Advanced Money Management (document 122966805), Advanced Quantitative Trading with AI (document 122832409), and NDS New Approach (document 122576333). These are catalogued for later full-text review; they are not ingestion-enabled by this change.
+- Public archive: https://telemetr.io/en/channels/1645847716-fuzzylogic_nds/posts
+- Provenance: `third_party_telegram_archive`.
+- Catalog-only. No stable, individually verified post evidence chain has been established for Trainer intake.
+
+### 4. Further author-listed Academia material
+
+NDS Farsi (129628090), Advanced Money Management (122966805), Advanced Quantitative Trading with AI (122832409), and NDS New Approach (122576333) remain identified by profile metadata only; full-text extraction and document integrity review are pending.
 
 ### Source-readiness boundary
 
-- The Telegram diagnostics remain separate and continue to require all four configured Telegram channels to expose actual public post wrappers.
-- A successful Academia archive check does not turn the official Telegram source gate green and does not substitute for Telegram post availability.
-- All independently captured material remains pending. L2 source eligibility is not rule validation or approval; L1 remains the final owner approval gate.
-- Preview diagnostics are fetch-only: no AI invocation, KV/D1 write, training run, approval, Cron change, active deployment, or Production change.
+- The four official Telegram sources remain unchanged. The strict official-source gate still requires actual post content from all four; independent catalogues do not turn that gate green.
+- Academia is blocked by HTTP 403; TG.ME is metadata-only; Telemetr is cross-reference only.
+- No independent archive content has been admitted to rule extraction or training.
+- L2 eligibility is not rule validation or approval; L1 remains the final owner-approval gate.
+- All Preview diagnostics are fetch-only: no AI invocation, KV/D1 write, training run, approval, Cron change, active deployment, or Production change.
