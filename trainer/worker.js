@@ -12,9 +12,28 @@ const INDEPENDENT_ARCHIVE_SOURCES = [
     sourceType: "independent_document",
     sourceOriginType: "author_linked_independent_platform",
     sourceCaptureMethod: "academia_author_published_document_html",
-    sourceRole: "verified_author_linked_archive"
+    sourceRole: "author_linked_document",
+    ingestionEnabled: false
   }
 ];
+const TGME_ARCHIVE_POSTS = [
+  ["983", "65"], ["972", "64"], ["967", "63-2"], ["965", "63-1"],
+  ["958", "62"], ["933", "56"], ["931", "55"], ["930", "54"],
+  ["929", "53"], ["926", "52"], ["924", "50"], ["922", "49"],
+  ["921", "48"], ["919", "47"], ["907", "45"], ["906", "44"],
+  ["905", "43"], ["889", "summary-4"], ["888", "summary-3"]
+].map(([postId, lesson]) => ({
+  url: "https://tg.me/fuzzylogic_nds/" + postId,
+  name: "FuzzyLogic_NDS_TGME_" + postId,
+  sourceType: "independent_post_archive",
+  sourcePostId: postId,
+  lesson,
+  canonicalPostUrl: "https://t.me/fuzzylogic_nds/" + postId,
+  sourceOriginType: "third_party_telegram_archive",
+  sourceCaptureMethod: "tgme_public_post_html",
+  sourceRole: "historical_post_mirror",
+  ingestionEnabled: true
+}));
 const INGESTION_SOURCES = [
   ...CHANNELS.map(channel => ({
     ...channel,
@@ -22,7 +41,7 @@ const INGESTION_SOURCES = [
     sourceOriginType: "official_telegram_channel",
     sourceCaptureMethod: "telegram_public_post_html"
   })),
-  ...INDEPENDENT_ARCHIVE_SOURCES
+  ...TGME_ARCHIVE_POSTS.filter(source => source.ingestionEnabled === true)
 ];
 const DIAGNOSTIC_CHANNELS = [
   ...CHANNELS,
@@ -300,6 +319,7 @@ function sourceEvidencePayload(rule) {
     priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : null,
     sourcePostId: String(rule.sourcePostId || ""),
     sourcePostUrl: String(rule.sourcePostUrl || ""),
+    ...(rule.sourceArchiveUrl ? { sourceArchiveUrl: String(rule.sourceArchiveUrl) } : {}),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
     sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
@@ -546,10 +566,77 @@ async function readAcademiaDocument(env, source) {
   return { html, text, marker, postIds: [post.sourcePostKey], posts, hasPosts: true, diagnostics };
 }
 
+async function readTgmeArchivePost(source) {
+  if (!source || source.sourceType !== "independent_post_archive" ||
+      source.sourceOriginType !== "third_party_telegram_archive" ||
+      source.sourceCaptureMethod !== "tgme_public_post_html" ||
+      !TGME_ARCHIVE_POSTS.some(item => item.sourcePostId === source.sourcePostId &&
+        item.url === source.url && item.canonicalPostUrl === source.canonicalPostUrl)) {
+    throw new Error("TG.ME archive post is not in the exact Trainer allowlist");
+  }
+  const requested = new URL(source.url);
+  if (requested.protocol !== "https:" || requested.hostname !== "tg.me" ||
+      requested.pathname !== "/fuzzylogic_nds/" + source.sourcePostId) {
+    throw new Error("TG.ME source URL failed exact archive allowlist validation");
+  }
+  const response = await fetch(source.url, {
+    redirect: "follow",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; GoldstarTrainer/1.0)",
+      "Accept": "text/html,application/xhtml+xml"
+    }
+  });
+  const finalUrl = new URL(response.url || source.url);
+  if (!response.ok) throw new Error("TG.ME HTTP " + response.status);
+  if (finalUrl.protocol !== "https:" || finalUrl.hostname !== "tg.me" ||
+      finalUrl.pathname !== requested.pathname) {
+    throw new Error("TG.ME redirected outside the exact allowlisted post identity");
+  }
+  const html = await response.text();
+  if (!html.includes("t.me/fuzzylogic_nds/" + source.sourcePostId) ||
+      !/NDS Learning Hub/i.test(html) ||
+      !/FuzzyLogic_NDS|fuzzylogic_nds/i.test(html)) {
+    throw new Error("TG.ME page did not expose the matching original Telegram channel/post identity");
+  }
+  const text = extractAcademiaDocumentText(html);
+  const normalized = normalizeNdsText(text);
+  if (text.length < 70 || !/nds|ان دی اس/i.test(normalized) ||
+      !/جلسه/i.test(normalized) || !normalized.includes(source.lesson.split("-")[0])) {
+    throw new Error("TG.ME archive page did not expose the expected NDS lesson text");
+  }
+  const post = {
+    sourcePostId: source.sourcePostId,
+    sourcePostKey: "tgme/fuzzylogic_nds/" + source.sourcePostId,
+    sourcePostUrl: source.canonicalPostUrl,
+    sourceArchiveUrl: source.url,
+    text,
+    links: [],
+    youtubeLinks: [],
+    videoUrls: [],
+    sourceCaptureMethod: source.sourceCaptureMethod,
+    sourceOriginType: source.sourceOriginType
+  };
+  return {
+    html, text, marker: await channelContentMarker([post], text),
+    postIds: [post.sourcePostId], posts: [post], hasPosts: true,
+    diagnostics: {
+      requestedUrl: source.url, finalUrl: finalUrl.toString(),
+      httpStatus: response.status, responseOk: response.ok,
+      redirected: response.redirected === true,
+      archivePostId: source.sourcePostId,
+      canonicalPostUrl: source.canonicalPostUrl,
+      lesson: source.lesson,
+      textLength: text.length,
+      sourceOriginType: source.sourceOriginType,
+      sourceCaptureMethod: source.sourceCaptureMethod
+    }
+  };
+}
+
 async function readSource(env, source) {
-  return source.sourceType === "independent_document"
-    ? readAcademiaDocument(env, source)
-    : readChannel(env, source);
+  if (source.sourceType === "independent_document") return readAcademiaDocument(env, source);
+  if (source.sourceType === "independent_post_archive") return readTgmeArchivePost(source);
+  return readChannel(env, source);
 }
 
 function buildPromptPosts(eligiblePosts) {
@@ -1013,6 +1100,47 @@ export default {
         dryRun: true,
         persisted: false,
         aiCalled: false,
+        sources: results
+      });
+    }
+    if (url.pathname === "/__preview/tgme-archive-diagnostics" && request.method === "GET" &&
+        isAllowedPreviewHost(url)) {
+      const selected = TGME_ARCHIVE_POSTS.slice(0, 6);
+      const results = [];
+      for (let index = 0; index < selected.length; index += 3) {
+        const batch = await Promise.all(selected.slice(index, index + 3).map(async function(source) {
+          try {
+            const page = await readTgmeArchivePost(source);
+            return {
+              name: source.name,
+              postId: source.sourcePostId,
+              lesson: source.lesson,
+              canonicalPostUrl: source.canonicalPostUrl,
+              sourceArchiveUrl: source.url,
+              sourceOriginType: source.sourceOriginType,
+              sourceCaptureMethod: source.sourceCaptureMethod,
+              success: true,
+              textLength: page.text.length,
+              contentHash: await sha256Hex(page.text),
+              diagnostics: page.diagnostics
+            };
+          } catch (error) {
+            return {
+              name: source.name, postId: source.sourcePostId, lesson: source.lesson,
+              sourceOriginType: source.sourceOriginType,
+              sourceCaptureMethod: source.sourceCaptureMethod,
+              success: false, error: String(error.message || error).slice(0, 240)
+            };
+          }
+        }));
+        results.push(...batch);
+      }
+      return json({
+        ok: results.length === selected.length && results.every(item => item.success),
+        dryRun: true,
+        persisted: false,
+        aiCalled: false,
+        sampleCount: results.length,
         sources: results
       });
     }
