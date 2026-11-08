@@ -321,15 +321,21 @@ test("commit journal rejects keys outside the Trainer write allowlist", async ()
 test("source diagnostics require all configured channels but not diagnostic-only channels", async () => {
   const originalFetch = globalThis.fetch;
   const configured = new Set(["NDS4ALLVIDEOS", "FuzzyLogic_NDS", "BNJ1I", "cottagends"]);
+  const canonicalChannels = new Map([
+    ["nds4allvideos", "NDS4ALLVIDEOS"],
+    ["fuzzylogic_nds", "FuzzyLogic_NDS"],
+    ["bnj1i", "BNJ1I"],
+    ["cottagends", "cottagends"]
+  ]);
   const calls = { ai: 0, writes: 0, fetch: 0 };
   globalThis.fetch = async input => {
     calls.fetch++;
     const url = new URL(typeof input === "string" ? input : input.url);
-    const channel = url.pathname.split("/").pop();
-    if (!configured.has(channel)) {
+    const channel = canonicalChannels.get(url.pathname.split("/").pop().toLowerCase());
+    if (!channel || !configured.has(channel)) {
       return new Response("<html><body>No public posts</body></html>", { status: 200, headers: { "content-type": "text/html" } });
     }
-    const html = '<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="' + channel + '/456"><div class="tgme_widget_message_text">Nodal Displacement Sequencing contains a Hook, a Rally, and a Flag with sufficient source text for live-style diagnostics.</div></div></div>';
+    const html = '<div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message" data-post="' + channel + '/456"><div class="tgme_widget_message_text js-message_text">Nodal Displacement Sequencing contains a Hook, a Rally, and a Flag with sufficient source text for live-style diagnostics.</div></div></div>';
     return new Response(html, { status: 200, headers: { "content-type": "text/html" } });
   };
   const env = {
