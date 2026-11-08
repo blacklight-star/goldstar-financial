@@ -3,6 +3,15 @@ import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
 import worker, { isNdsRelevantText, signSourceEvidence } from "./worker.js";
 
+test("health reports staging scheduler paused", async () => {
+  const response = await worker.fetch(new Request("https://trainer.example/health"), {}, {});
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.mode, "staging-nds-ingestion");
+  assert.equal(body.scheduler, "paused; no Cron triggers configured");
+});
+
 const long = (text) => text + " This extended explanation contains enough context to exceed the minimum source-text threshold and represents a complete public post rather than a short title.";
 
 test("rejects generic ICT/SMC vocabulary without NDS structure", () => {
