@@ -737,6 +737,32 @@ async function runScheduledTraining(env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/__preview/hmac-sample" && request.method === "GET" && isAllowedPreviewHost(url)) {
+      try {
+        const sourceExcerpt = "Preview-only NDS HMAC parity fixture: Hook precedes Rally, and the Flag follows the Rally.";
+        const sample = {
+          id: "nds-preview-hmac-parity-v1",
+          validationStatus: "pending",
+          contentType: "trading_rule",
+          category: "cycle",
+          rule: "Preview sample: Hook precedes Rally; Flag follows Rally.",
+          conditions: ["Hook precedes Rally", "Rally precedes Flag"],
+          priority: 5,
+          sourcePostId: "987654321",
+          sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/987654321",
+          sourceExcerpt,
+          sourceExcerptHash: await sha256Hex(sourceExcerpt),
+          sourcePostContentHash: await sha256Hex("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction."),
+          sourceCaptureMethod: "telegram_public_post_html",
+          sourceExcerptVerified: true
+        };
+        sample.sourceEvidenceSignature = await signSourceEvidence(env, sample);
+        return json({ ok: true, sample: sample });
+      } catch (_) {
+        return json({ ok: false, error: "Preview HMAC sample signing unavailable" }, 503);
+      }
+    }
+
     if (url.pathname === "/__preview/parser-selftest" && request.method === "GET" && isAllowedPreviewHost(url)) {
       const sampleHtml = '<div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/125"><div class="tgme_widget_message_text js-message_text">Rule A: price sweeps prior low <div class="tgme_widget_message_link_preview">nested detail</div> and then reclaims it &amp; confirms.</div><div class="tgme_widget_message_caption">Risk must be defined before entry.</div></div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/126"><div class="tgme_widget_message_text js-message_text">Rule B: wait for higher-timeframe confirmation.</div></div></div>';
       const parsed = parseTelegramPosts(sampleHtml, { name: "NDS4ALLVIDEOS" });
