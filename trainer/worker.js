@@ -461,22 +461,22 @@ function decodeIndependentHtmlEntities(value) {
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
-    .replace(/&#(\\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#(\d+);/g, (_, n) => Number(n) <= 0x10ffff ? String.fromCodePoint(Number(n)) : " ")
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
 }
 
 export function extractAcademiaDocumentText(html) {
   let source = String(html || "");
   source = source
-    .replace(/<!--[\\s\\S]*?-->/g, " ")
-    .replace(/<(script|style|noscript|svg|iframe|form|nav|header|footer|aside)\\b[^>]*>[\\s\\S]*?<\\/\\1>/gi, " ")
-    .replace(/<(br|hr)\\b[^>]*>/gi, "\\n")
-    .replace(/<\\/(p|div|section|article|h[1-6]|li|tr|blockquote)>/gi, "\\n")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(script|style|noscript|svg|iframe|form|nav|header|footer|aside)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<(br|hr)\b[^>]*>/gi, "\n")
+    .replace(/<\/(p|div|section|article|h[1-6]|li|tr|blockquote)>/gi, "\n")
     .replace(/<[^>]+>/g, " ");
   const text = decodeIndependentHtmlEntities(source)
-    .replace(/[ \\t\\f\\v]+/g, " ")
-    .replace(/ *\\n */g, "\\n")
-    .replace(/\\n{3,}/g, "\\n\\n")
+    .replace(/[ \t\f\v]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
   return text.slice(0, 80000);
 }
@@ -529,12 +529,12 @@ async function readAcademiaDocument(env, source) {
     redirected: response.redirected === true,
     htmlLength: html.length,
     extractedTextLength: text.length,
-    pageTitle: ((html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i) || [])[1] || "").replace(/<[^>]+>/g, " ").trim().slice(0, 180),
+    pageTitle: ((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "").replace(/<[^>]+>/g, " ").trim().slice(0, 180),
     documentId: source.documentId,
     sourceOriginType: source.sourceOriginType,
     sourceCaptureMethod: source.sourceCaptureMethod
   };
-  return { html, text, marker, postIds: [post.sourceKey], posts, hasPosts: true, diagnostics };
+  return { html, text, marker, postIds: [post.sourcePostKey], posts, hasPosts: true, diagnostics };
 }
 
 async function readSource(env, source) {
@@ -546,7 +546,7 @@ async function readSource(env, source) {
 async function runDryRun(env, channelName, fetchOnly) {
   const channel = INGESTION_SOURCES.find(function(item) { return item.name === channelName; });
   if (!channel) throw new Error("Unknown channel");
-  const page = await readChannel(env, channel);
+  const page = await readSource(env, channel);
   if (fetchOnly) return {
     success: page.hasPosts, retrievalStatus: page.hasPosts ? "posts_extracted" : "no_posts_extracted",
     dryRun: true, fetchOnly: true, persisted: false,
@@ -662,7 +662,7 @@ async function runScheduledTraining(env) {
       let aiCallStarted = false;
       try {
         await renewKnowledgeWriteLock(env, lockOwner);
-        const page = await readChannel(env, channel);
+        const page = await readSource(env, channel);
         await renewKnowledgeWriteLock(env, lockOwner);
         const markerKey = "trainer:last_seen:" + channel.name;
         const previousMarker = await env.KNOWLEDGE.get(markerKey);
