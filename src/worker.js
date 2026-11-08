@@ -20,6 +20,11 @@ const NDS_AUTHOR_LINKED_DOCUMENTS = new Map([
     sourceCaptureMethod: "academia_author_published_document_html"
   }]
 ]);
+const NDS_TGME_ARCHIVE_POST_IDS = new Set([
+  "983", "972", "967", "965", "958", "944", "937", "936", "935", "934",
+  "933", "931", "930", "929", "926", "924", "922", "921", "919",
+  "907", "906", "905"
+]);
 
 function ok(data, s) {
   if (!s) s = 200;
@@ -196,6 +201,7 @@ function sourceEvidencePayload(rule) {
     priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : null,
     sourcePostId: String(rule.sourcePostId || ""),
     sourcePostUrl: String(rule.sourcePostUrl || ""),
+    ...(rule.sourceArchiveUrl ? { sourceArchiveUrl: String(rule.sourceArchiveUrl) } : {}),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
     sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
@@ -241,6 +247,15 @@ async function hasVerifiedRuleEvidence(rule, env) {
           sourceUrl.pathname.replace(/\/$/, "") !== authorDoc.path ||
           authorDoc.sourceOriginType !== originType ||
           authorDoc.sourceCaptureMethod !== captureMethod) return false;
+    } else if (captureMethod === "tgme_public_post_html" &&
+        originType === "third_party_telegram_archive") {
+      var archivePostId = sourcePostId;
+      var archiveMatch = sourceUrl.pathname.match(/^\/fuzzylogic_nds\/(\d+)$/);
+      var archiveUrl = new URL(String(rule.sourceArchiveUrl || ""));
+      if (!NDS_TGME_ARCHIVE_POST_IDS.has(archivePostId) ||
+          sourceUrl.hostname !== "t.me" || !archiveMatch || archiveMatch[1] !== archivePostId ||
+          archiveUrl.protocol !== "https:" || archiveUrl.hostname !== "tg.me" ||
+          archiveUrl.pathname !== "/fuzzylogic_nds/" + archivePostId) return false;
     } else {
       return false;
     }
@@ -294,6 +309,7 @@ function financialRuleEvidencePayload(rule) {
     priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : null,
     sourcePostId: String(rule.sourcePostId || ""),
     sourcePostUrl: String(rule.sourcePostUrl || ""),
+    ...(rule.sourceArchiveUrl ? { sourceArchiveUrl: String(rule.sourceArchiveUrl) } : {}),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
     sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
