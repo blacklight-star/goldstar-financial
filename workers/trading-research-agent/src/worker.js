@@ -86,8 +86,13 @@ export default {
       const authorization = request.headers.get("authorization") || "";
       const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
       if (!constantTimeEqual(supplied, env.MQL5_GATEWAY_API_KEY)) return json({ ok: false, error: "unauthorized" }, 401);
+      let input;
       try {
-        const input = await readBoundedJson(request);
+        input = await readBoundedJson(request);
+      } catch (error) {
+        return json({ ok: false, error: error.message || "invalid_request" }, error.status || 400);
+      }
+      try {
         if (url.pathname === "/mql5/tools") {
           const listing = await mql5Tools(env);
           return json({ ok: true, protocol_version: listing.protocolVersion, tools: listing.tools });
