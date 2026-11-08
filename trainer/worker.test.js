@@ -171,7 +171,7 @@ test("scheduled training refuses to run or write candidates without the signing 
   }
 });
 
-test("immutable V17 preview hostname serves parser and source diagnostics without writes", async () => {
+test("current candidate code accepts the previously issued V17 hostname in a fetch-only diagnostics unit simulation", async () => {
   const originalFetch = globalThis.fetch;
   const calls = { ai: 0, writes: 0, fetch: 0 };
   globalThis.fetch = async () => {
