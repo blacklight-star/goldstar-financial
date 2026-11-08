@@ -21,7 +21,7 @@ This folder contains the source-controlled Trainer mirror derived from the Stagi
 ## Preview safety
 
 - `/__preview/dry-run`, `/__preview/parser-selftest`, and `/__preview/source-diagnostics` are fetch-only diagnostics. They must never call Workers AI or write KV/D1.
-- The immutable Preview hostname for Candidate V17 is `https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev`.
+- Candidate V17 uses `https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev`. Future immutable versions are accepted only when the hostname matches the exact eight-hex-prefix Trainer Staging pattern.
 - Preview host allowlisting is explicit. Labels/aliases are not assumed to create DNS routes.
 - The Staging Cron remains paused. There is no automatic training run.
 - Authenticated admin execution requires the Staging-only `GOLDSTAR_BRIDGE_SECRET`. No secret values belong in Git, KV, D1, logs, or chat.
