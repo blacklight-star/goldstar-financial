@@ -318,8 +318,8 @@ export default {
         if (!Array.isArray(approvalBody.ids) || approvalBody.ids.length < 1 || approvalBody.ids.length > 10) return err("Provide 1 to 10 pending rule IDs", 400);
         var ids = Array.from(new Set(approvalBody.ids.map(function(id) { return String(id || "").trim(); })));
         if (ids.length !== approvalBody.ids.length || ids.some(function(id) { return !id; })) return err("Rule IDs must be non-empty and unique", 400);
-        var pending = await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json", cacheTtl: 60 }).catch(function() { return []; });
-        var active = await env.KNOWLEDGE.get("knowledge_NDS", { type: "json", cacheTtl: 60 }).catch(function() { return []; });
+        var pending = await env.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json", cacheTtl: 60 });
+        var active = await env.KNOWLEDGE.get("knowledge_NDS", { type: "json", cacheTtl: 60 });
         if (!Array.isArray(pending) || !Array.isArray(active)) return err("Knowledge store has invalid shape; no changes made", 500);
         var selected = pending.filter(function(rule) { return ids.indexOf(String(rule.id)) >= 0; });
         var missing = ids.filter(function(id) { return !selected.some(function(rule) { return String(rule.id) === id; }); });
@@ -438,14 +438,16 @@ export default {
 
       if (path.startsWith("/knowledge/")) {
         var style = path.split("/")[2];
-        var rules = await env.KNOWLEDGE.get("knowledge_" + style, { type: "json", cacheTtl: KV_CACHE_TTL }).catch(function() { return []; });
-        return ok({ style: style, count: (rules || []).length, rules: rules || [] });
+        var rules = await env.KNOWLEDGE.get("knowledge_" + style, { type: "json", cacheTtl: KV_CACHE_TTL });
+        if (rules !== null && !Array.isArray(rules)) return err("Knowledge store has invalid shape", 500);
+        var knowledgeRules = rules === null ? [] : rules;
+        return ok({ style: style, count: knowledgeRules.length, rules: knowledgeRules });
       }
 
       if (path === "/strategy") {
         var sArr = await Promise.all([
-          env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL }).catch(function() { return null; }),
-          env.STRATEGY.get("strategy_updated", { cacheTtl: KV_CACHE_TTL }).catch(function() { return null; }),
+          env.STRATEGY.get("current_strategy", { cacheTtl: KV_CACHE_TTL }),
+          env.STRATEGY.get("strategy_updated", { cacheTtl: KV_CACHE_TTL }),
         ]);
         var rawStrategy = sArr[0];
         if (!rawStrategy) return ok({ status: "not_created", approved: false, strategy: null, lastUpdated: sArr[1] });
