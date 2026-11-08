@@ -57,25 +57,3 @@ jobs:
           check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
           check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
-
-      - name: One-time BTC/USD CMC preview smoke test
-        if: github.event_name == 'push' && github.ref == 'refs/heads/security/require-l1-bridge-for-rule-approval'
-        shell: bash
-        run: |
-          set -euo pipefail
-          response="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "https://c0c6a935-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes-once")"
-          RESPONSE="$response" node -e '
-            const data = JSON.parse(process.env.RESPONSE);
-            if (!(data.ok === true && data.provider === "coinmarketcap" &&
-                  data.symbol === "BTC" && data.quote_currency === "USD" &&
-                  data.records_written === 1 && Number.isFinite(data.price))) {
-              console.error("One-time CMC preview check failed:", data);
-              process.exit(1);
-            }
-            console.log("One-time BTC/USD quote ingested:", JSON.stringify({
-              run_id: data.run_id, price: data.price,
-              provider_status: data.provider_status,
-              records_written: data.records_written,
-              quote_last_updated: data.quote_last_updated
-            }));
-          '
