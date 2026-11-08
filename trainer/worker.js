@@ -302,12 +302,12 @@ function sourceEvidencePayload(rule) {
     sourcePostUrl: String(rule.sourcePostUrl || ""),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
-    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
-    sourceExcerptVerified: rule.sourceExcerptVerified === true
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
   };
   // Preserve signatures issued before origin typing was introduced; all new
   // independent-platform records must carry an explicit signed origin type.
   if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
+  payload.sourceExcerptVerified = rule.sourceExcerptVerified === true;
   return payload;
 }
 
