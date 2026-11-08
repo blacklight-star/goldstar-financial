@@ -506,7 +506,7 @@ async function readAcademiaDocument(env, source) {
   if (!response.ok) throw new Error("Academia HTTP " + response.status);
   if (!["academia.edu", "www.academia.edu"].includes(finalUrl.hostname) ||
       finalUrl.pathname.split("/")[1] !== source.documentId ||
-      finalUrl.pathname.replace(/\/$/, "") !== requested.pathname.replace(/\\/$/, "")) {
+      finalUrl.pathname.replace(/\/$/, "") !== requested.pathname.replace(/\/$/, "")) {
     throw new Error("Academia redirected outside the allowlisted document identity");
   }
   const html = await response.text();
