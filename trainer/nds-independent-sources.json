@@ -2,7 +2,15 @@
   "schemaVersion": 1,
   "updatedAt": "2026-11-09",
   "policy": {
-    "independentPlatformDoesNotMeanIndependentValidation": true,
+    "authorityOrder": [
+      "primary_author_published_source",
+      "official_telegram_channel",
+      "third_party_telegram_archive"
+    ],
+    "academiaIsPrimarySource": true,
+    "academiaAcquisition": "user_initiated_first_party_pdf_download",
+    "automatedAcademiaSiteAccessAllowed": false,
+    "noModelFineTuning": true,
     "telegramSourcesRemainUnchanged": true,
     "approvalRequiresL2EvidenceVerification": true,
     "noAutomaticTrainingOrApproval": true
@@ -15,19 +23,18 @@
       "platform": "Academia.edu",
       "documentId": "129627974",
       "canonicalUrl": "https://www.academia.edu/129627974/NDS_Strategy_English_Version",
-      "sourceOriginType": "author_linked_independent_platform",
-      "sourceCaptureMethod": "academia_author_published_document_html",
-      "sourceRole": "foundational_author_linked_document",
-      "ingestionEnabled": false,
-      "status": "blocked_403_not_ingestion_ready",
-      "provenanceBasis": "The NDS Learning Hub public Telegram post links to the author's Academia profile for NDS articles; the profile lists this document under the author's papers.",
-      "verificationScope": "author-linked attribution and NDS subject relevance",
-      "notEstablished": [
-        "independent validation of predictive performance",
-        "reproducibility of quantitative claims",
-        "commercial or legal publication status"
-      ],
-      "reason": "Author-linked provenance is supported by the public NDS channel and author profile, but the Trainer Preview fetch returns HTTP 403."
+      "sourceOriginType": "primary_author_published_source",
+      "sourceCaptureMethod": "academia_account_pdf_download",
+      "sourceRole": "primary_core_methodology",
+      "status": "primary_source_manual_download_pending",
+      "authorityTier": "primary",
+      "format": "application/pdf",
+      "acquisitionMode": "user_initiated_first_party_download",
+      "automatedSiteAccessAllowed": false,
+      "availableForManualImport": true,
+      "provenanceBasis": "Listed under Papers by Dr Iraj Jafarian on his Academia profile; the NDS Farsi listing explicitly describes NDS as designed by Dr Iraj Jafarian.",
+      "usageBoundary": "Use only via user-initiated first-party individual PDF download. No automated site scraping/download. Do not fine-tune models or redistribute the PDF; check author/platform permissions before any broader/commercial use.",
+      "nextStep": "Manual PDF acquisition using the owner's existing free Academia account, then controlled document import with SHA-256, page count, text extraction, excerpt hashes, and HMAC provenance."
     },
     {
       "id": "academia-nds-farsi",
@@ -36,12 +43,17 @@
       "platform": "Academia.edu",
       "documentId": "129628090",
       "canonicalUrl": "https://www.academia.edu/129628090/NDS_farsi",
-      "sourceOriginType": "author_linked_independent_platform",
-      "sourceCaptureMethod": "academia_author_published_document_html",
-      "sourceRole": "potential_primary_language_supplement",
-      "ingestionEnabled": false,
-      "status": "identified_full_text_review_pending",
-      "reason": "Profile metadata identifies the document, but readable full text and document integrity have not yet been verified in the current capture path."
+      "sourceOriginType": "primary_author_published_source",
+      "sourceCaptureMethod": "academia_account_pdf_download",
+      "sourceRole": "primary_core_methodology",
+      "status": "primary_source_manual_download_pending",
+      "authorityTier": "primary",
+      "format": "application/pdf",
+      "acquisitionMode": "user_initiated_first_party_download",
+      "automatedSiteAccessAllowed": false,
+      "availableForManualImport": true,
+      "provenanceBasis": "Listed under Papers by Dr Iraj Jafarian; its profile description explicitly states NDS was designed by Dr Iraj Jafarian.",
+      "nextStep": "Manual PDF acquisition using the owner's existing free Academia account, then controlled document import."
     },
     {
       "id": "academia-nds-money-management",
@@ -50,11 +62,15 @@
       "platform": "Academia.edu",
       "documentId": "122966805",
       "canonicalUrl": "https://www.academia.edu/122966805/Advanced_Money_Management_Strategy_Applicable_to_Nodal_Displacement_Geometry",
-      "sourceOriginType": "author_linked_independent_platform",
-      "sourceCaptureMethod": "academia_author_published_document_html",
-      "sourceRole": "risk_management_supplement",
-      "ingestionEnabled": false,
-      "status": "identified_full_text_review_pending"
+      "sourceOriginType": "primary_author_published_source",
+      "sourceCaptureMethod": "academia_account_pdf_download",
+      "sourceRole": "primary_author_supplement",
+      "status": "primary_source_manual_download_pending",
+      "authorityTier": "primary",
+      "format": "application/pdf",
+      "acquisitionMode": "user_initiated_first_party_download",
+      "automatedSiteAccessAllowed": false,
+      "availableForManualImport": true
     },
     {
       "id": "academia-nds-ai-quant",
@@ -66,11 +82,15 @@
       "platform": "Academia.edu",
       "documentId": "122832409",
       "canonicalUrl": "https://www.academia.edu/122832409/Advanced_Quantitative_Trading_Integrating_Artificial_Intelligence_with_Nodal_Displacement_Sequencing",
-      "sourceOriginType": "author_linked_independent_platform",
-      "sourceCaptureMethod": "academia_author_published_document_html",
-      "sourceRole": "research_supplement_not_core_rules",
-      "ingestionEnabled": false,
-      "status": "identified_full_text_review_pending"
+      "sourceOriginType": "primary_author_published_source",
+      "sourceCaptureMethod": "academia_account_pdf_download",
+      "sourceRole": "coauthored_author_supplement",
+      "status": "primary_source_manual_download_pending",
+      "authorityTier": "primary",
+      "format": "application/pdf",
+      "acquisitionMode": "user_initiated_first_party_download",
+      "automatedSiteAccessAllowed": false,
+      "availableForManualImport": true
     },
     {
       "id": "academia-nds-new-approach",
@@ -79,11 +99,15 @@
       "platform": "Academia.edu",
       "documentId": "122576333",
       "canonicalUrl": "https://www.academia.edu/122576333/Nodal_Displacement_Sequencing_NDS_New_Approach",
-      "sourceOriginType": "author_linked_independent_platform",
-      "sourceCaptureMethod": "academia_author_published_document_html",
-      "sourceRole": "research_supplement_not_core_rules",
-      "ingestionEnabled": false,
-      "status": "identified_full_text_review_pending"
+      "sourceOriginType": "primary_author_published_source",
+      "sourceCaptureMethod": "academia_account_pdf_download",
+      "sourceRole": "primary_author_supplement",
+      "status": "primary_source_manual_download_pending",
+      "authorityTier": "primary",
+      "format": "application/pdf",
+      "acquisitionMode": "user_initiated_first_party_download",
+      "automatedSiteAccessAllowed": false,
+      "availableForManualImport": true
     },
     {
       "id": "tgme-fuzzylogic-nds-post-index",
