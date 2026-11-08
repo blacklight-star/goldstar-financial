@@ -291,7 +291,7 @@ async function sha256Hex(value) {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 function sourceEvidencePayload(rule) {
-  return {
+  const payload = {
     id: String(rule.id || ""),
     contentType: String(rule.contentType || ""),
     category: String(rule.category || ""),
@@ -303,9 +303,12 @@ function sourceEvidencePayload(rule) {
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
     sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
-    sourceOriginType: String(rule.sourceOriginType || ""),
     sourceExcerptVerified: rule.sourceExcerptVerified === true
   };
+  // Preserve signatures issued before origin typing was introduced; all new
+  // independent-platform records must carry an explicit signed origin type.
+  if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
+  return payload;
 }
 
 export async function signSourceEvidence(env, rule) {
