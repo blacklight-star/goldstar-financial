@@ -143,17 +143,37 @@ async function sha256Hex(value) {
   }).join("");
 }
 
-async function hasVerifiedRuleEvidence(rule) {
+function sourceEvidencePayload(rule) {
+  return {
+    id: String(rule.id || ""),
+    contentType: String(rule.contentType || ""),
+    sourcePostId: String(rule.sourcePostId || ""),
+    sourcePostUrl: String(rule.sourcePostUrl || ""),
+    sourceExcerptHash: String(rule.sourceExcerptHash || ""),
+    sourcePostContentHash: String(rule.sourcePostContentHash || ""),
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
+    sourceExcerptVerified: rule.sourceExcerptVerified === true
+  };
+}
+
+async function hasVerifiedRuleEvidence(rule, env) {
   if (!rule || typeof rule !== "object" ||
       rule.validationStatus !== "pending" ||
       rule.contentType !== "trading_rule" ||
-      rule.sourceExcerptVerified !== true) return false;
+      rule.sourceExcerptVerified !== true ||
+      rule.sourceCaptureMethod !== "telegram_public_post_html") return false;
   var sourcePostId = String(rule.sourcePostId || "").trim();
   var sourcePostUrl = String(rule.sourcePostUrl || "").trim();
   var excerpt = String(rule.sourceExcerpt || "").trim();
   var expectedHash = String(rule.sourceExcerptHash || "").trim().toLowerCase();
+  var contentHash = String(rule.sourcePostContentHash || "").trim().toLowerCase();
+  var signature = String(rule.sourceEvidenceSignature || "").trim().toLowerCase();
   if (!sourcePostId || excerpt.length < 40 || excerpt.length > 2000 ||
-      !/^[a-f0-9]{64}$/.test(expectedHash)) return false;
+      !/^[a-f0-9]{64}$/.test(expectedHash) ||
+      !/^[a-f0-9]{64}$/.test(contentHash) ||
+      !/^[a-f0-9]{64}$/.test(signature) ||
+      !env || typeof env.NDS_EVIDENCE_HMAC_KEY !== "string" ||
+      env.NDS_EVIDENCE_HMAC_KEY.length < 32) return false;
   try {
     var sourceUrl = new URL(sourcePostUrl);
     if (sourceUrl.protocol !== "https:" || sourceUrl.hostname !== "t.me") return false;
@@ -163,7 +183,13 @@ async function hasVerifiedRuleEvidence(rule) {
   } catch (_) {
     return false;
   }
-  return (await sha256Hex(excerpt)) === expectedHash;
+  if ((await sha256Hex(excerpt)) !== expectedHash) return false;
+  var key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(env.NDS_EVIDENCE_HMAC_KEY),
+    { name: "HMAC", hash: "SHA-256" }, false, ["verify"]
+  );
+  var signatureBytes = new Uint8Array(signature.match(/.{2}/g).map(function(byte) { return parseInt(byte, 16); }));
+  return await crypto.subtle.verify("HMAC", key, signatureBytes, new TextEncoder().encode(JSON.stringify(sourceEvidencePayload(rule))));
 }
 
 function parseJsonSafe(value) {
@@ -183,6 +209,8 @@ function financialRuleEvidencePayload(rule) {
     sourcePostUrl: String(rule.sourcePostUrl || ""),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
+    sourceEvidenceSignature: String(rule.sourceEvidenceSignature || ""),
     sourceExcerptVerified: rule.sourceExcerptVerified === true
   };
 }
@@ -277,7 +305,7 @@ export default {
         if (pendingProgress !== null && !Array.isArray(pendingProgress)) return err("Pending NDS store has invalid shape", 500);
         var pendingEntries = pendingProgress === null ? [] : pendingProgress;
         var pendingRuleEntries = pendingEntries.filter(function(rule) { return rule && rule.contentType === "trading_rule"; });
-        var pendingEligibility = await Promise.all(pendingRuleEntries.map(hasVerifiedRuleEvidence));
+        var pendingEligibility = await Promise.all(pendingRuleEntries.map(function(rule) { return hasVerifiedRuleEvidence(rule, env); }));
         return ok({
           ict: k2.ict.length, rtm: k2.rtm.length, nds: k2.nds.length,
           approvedTotal: k2.all.length, legacy: k2.legacy,
@@ -292,7 +320,7 @@ export default {
         var pendingEntries = pendingRaw === null ? [] : pendingRaw;
         if (!Array.isArray(pendingEntries)) return err("Pending NDS store has invalid shape", 500);
         var pendingRuleEntries = pendingEntries.filter(function(rule) { return rule && rule.contentType === "trading_rule"; });
-        var pendingEligibility = await Promise.all(pendingRuleEntries.map(hasVerifiedRuleEvidence));
+        var pendingEligibility = await Promise.all(pendingRuleEntries.map(function(rule) { return hasVerifiedRuleEvidence(rule, env); }));
         var reviewRules = pendingRuleEntries.map(function(rule, index) {
           return Object.assign({}, rule, { approvalEligible: pendingEligibility[index] });
         });
@@ -326,7 +354,7 @@ export default {
         if (missing.length) return err("Some IDs are not pending: " + missing.join(", "), 404);
         var unsupported = [];
         for (var ui = 0; ui < selected.length; ui++) {
-          if (!(await hasVerifiedRuleEvidence(selected[ui]))) unsupported.push(selected[ui]);
+          if (!(await hasVerifiedRuleEvidence(selected[ui], env))) unsupported.push(selected[ui]);
         }
         if (unsupported.length) return err("Selected rules lack verified, rule-specific source evidence; no changes made", 409);
         var activeIds = new Set(active.map(function(rule) { return String(rule.id); }));
