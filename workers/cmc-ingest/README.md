@@ -1,31 +1,43 @@
-# Goldstar CMC Ingestion — Staging candidate
+# Goldstar CMC Ingestion — dedicated Staging service
 
-This Worker is a dedicated CMC-to-market-research D1 ingestion service. It is kept separate from the NDS knowledge database and from the MQL5/MT5 gateway.
+The standalone Worker is deployed as `goldstar-cmc-ingest-staging`. It is separate from the legacy CMC/TradingView Worker, the NDS knowledge database, and the MT5 gateway.
 
-## Contract
+## Live endpoints
 
-- Public read-only health: `GET /health`.
-- Authenticated ingest: `POST /cmc/quotes`.
-- Authentication: `Authorization: Bearer <INGEST_AUTH_TOKEN>`.
-- Provider credential: Cloudflare Worker Secret `CMC_API_KEY`.
-- D1 binding: `MARKET_DB` → `goldstar_market_research_staging`.
-- Request body: `{"symbols":["BTC","ETH"],"convert":"USD"}`; 1–20 unique ticker symbols.
-- Provider quotes and successful ingestion audit status are committed in one D1 batch.
-- Provider/storage errors are returned as failure and recorded in `cmc_ingestion_runs` when possible.
+- Health: `GET https://goldstar-cmc-ingest-staging.goldstar-nsl83.workers.dev/health`.
+- Owner console: one-time bootstrap link, then `/console`.
+- Owner ingestion API: `POST /api/cmc/quotes`; requires the HttpOnly owner session cookie and exact same-origin request.
+- Credential onboarding: `POST /api/cmc/credential`; validates the supplied CMC key against `/v1/key/info`, stores it encrypted with AES-256-GCM in a separate EU D1 vault, and performs one BTC/USD verification ingestion.
 
-## Release boundary
+## Bound resources
 
-- The Worker source, tests and Wrangler staging configuration are source-control artifacts only.
-- No Worker version is uploaded or deployed by this change.
-- No Secret is created, read, rotated or modified.
-- No D1 migration or data write is performed by CI.
-- Before an owner enables the Staging Worker, the two required secrets must be configured in Cloudflare. Their values must never be put in Git, chat, logs, or D1.
-- No Cron is configured. Ingestion is manual/on-demand until a separate operating policy is approved.
+- `MARKET_DB` → `goldstar_market_research_staging` (D1 ID `e5978640-6035-41fe-8947-4e6fc58c5a92`).
+- `VAULT_DB` → `goldstar_cmc_vault_staging` (EU D1 ID `d62bb4da-bb83-47b2-84cc-baea6dda6fb6`).
+- `CREDENTIAL_VAULT_KEY` is a Cloudflare Secret. Its value is never stored in GitHub, D1, chat, or logs.
+- The CMC API key is encrypted at rest in `VAULT_DB`; only ciphertext and IV are stored.
 
-## Current Preview instantiation
+## Bootstrap and session security
 
-- The current Preview Candidate V9 is uploaded to the existing `trading-research-agent` Worker as a version-only Preview so its existing CMC provider and ingest secrets can be inherited without reading or rotating them.
-- V9 binds `MARKET_DB` only to `goldstar_market_research_staging`; it does not inherit the old `DB` binding.
-- Preview URL: `https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev`.
-- `wrangler.cmc.staging.toml` describes the clean standalone Worker name for a future separated deployment. That new script has not been created or deployed. Do not run `wrangler deploy` with this config until a separate release is explicitly approved.
-- The existing deployed `trading-research-agent` version remains unchanged. V9 is preview-only and the Worker has no Cron schedule.
+- The bootstrap token is 256-bit random material. Only its SHA-256 hash is stored in D1 and it expires after 7 days.
+- `GET /bootstrap/:token` is read-only and displays a confirmation page; link previews and scanners cannot consume the token.
+- An explicit same-origin `POST /bootstrap/activate` atomically consumes the token and creates a 30-day HttpOnly, Secure, SameSite=Strict session cookie.
+- API POST requests require an exact Origin match and a valid owner session.
+- No CORS access, public quote-ingest route, Cron, automatic trading, or Production binding is configured.
+
+## Ingestion guarantees
+
+- Only 1–20 unique uppercase ticker symbols and a 3–5 character quote currency are accepted.
+- Request bodies are size-bounded while streaming.
+- Each run creates a running audit record. Quote upserts and the success audit are committed in one D1 batch; provider/D1 errors do not return a success response.
+- The API key is never included in API responses or application logs.
+- The same market D1 is read by the Financial L2 staging candidate; no NDS D1 is bound.
+
+## Owner action still required
+
+The CMC key cannot be recovered from the prior Worker Secret. The owner must retrieve a current key from the CoinMarketCap Developer Portal and enter it directly in the HTTPS console. Do not paste it into GitHub, chat, PowerShell history, or issue comments.
+
+## Operations / release boundary
+
+- No Cron schedules are configured.
+- This service is Staging-only. The old `trading-research-agent` deployment and its Secrets remain unchanged.
+- `npm test` includes bootstrap replay, cross-origin rejection, and read-only GET tests.
