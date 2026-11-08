@@ -17,3 +17,19 @@ jobs:
         with:
           node-version: 20
       - run: node --test test/trading-research-agent.test.mjs test/mt5-local-bridge.test.mjs
+
+      - name: Live immutable MT5 preview health
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESPONSE="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-connrefused --connect-timeout 10 --max-time 20 \
+            https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health)"
+          RESPONSE="$RESPONSE" node -e '
+            const data = JSON.parse(process.env.RESPONSE);
+            if (data.ok !== true || data.mt5_demo_bridge_configured !== true ||
+                data.database_configured !== true || data.mode !== "demo_read_only") {
+              console.error("MT5 V5 preview health check failed:", data);
+              process.exit(1);
+            }
+            console.log("MT5 V5 preview health OK");
+          '
