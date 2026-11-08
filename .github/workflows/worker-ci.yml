@@ -29,7 +29,7 @@ jobs:
               const data = JSON.parse(process.env.RESPONSE);
               let ok = false;
               switch (process.env.CHECK_NAME) {
-                case "Financial L2 V32":
+                case "Financial L2 V33":
                   ok = data.status === "ok" && data.analysisEnabled === false;
                   break;
                 case "MQL5/MT5 V5":
@@ -61,7 +61,7 @@ jobs:
               console.log(process.env.CHECK_NAME + " preview health OK");
             '
           }
-          check_json "Financial L2 V32" "https://7de8d143-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
+          check_json "Financial L2 V33" "https://14441a9d-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
           check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
           check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
