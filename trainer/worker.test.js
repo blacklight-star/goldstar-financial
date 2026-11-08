@@ -1,7 +1,7 @@
 import test from "node:test";
 import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
-import worker, { isNdsRelevantText } from "./worker.js";
+import worker, { isNdsRelevantText, signSourceEvidence } from "./worker.js";
 
 const long = (text) => text + " This extended explanation contains enough context to exceed the minimum source-text threshold and represents a complete public post rather than a short title.";
 
