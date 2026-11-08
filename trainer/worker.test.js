@@ -1,7 +1,7 @@
 import test from "node:test";
 import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
-import worker, { isNdsRelevantText, signSourceEvidence } from "./worker.js";
+import worker, { isNdsRelevantText, signSourceEvidence, renewKnowledgeWriteLock, recoverPendingKnowledgeCommit, persistKnowledgeCommit, isDeferredRetryDue, buildDeferredRecord } from "./worker.js";
 
 test("health reports staging scheduler paused", async () => {
   const response = await worker.fetch(new Request("https://trainer.example/health"), {}, {});
@@ -215,4 +215,102 @@ test("only the Trainer immutable-version hostname pattern is accepted for future
 
   const unrelated = await worker.fetch(new Request("https://deadbeef-other.goldstar-nsl83.workers.dev/__preview/parser-selftest"), {});
   assert.equal(unrelated.status, 404);
+});
+
+
+function mockLeaseDb(owned = true) {
+  return {
+    prepare(sql) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              return owned ? { owner_token: args[3] } : null;
+            },
+            async run() { return { success: true }; }
+          };
+        }
+      };
+    }
+  };
+}
+
+test("knowledge write lease renews only for the current unexpired owner", async () => {
+  assert.equal(await renewKnowledgeWriteLock({ DB: mockLeaseDb(true) }, "owner-1"), true);
+  await assert.rejects(
+    renewKnowledgeWriteLock({ DB: mockLeaseDb(false) }, "owner-1"),
+    /lease expired or ownership was lost/
+  );
+});
+
+test("deferred posts are re-evaluated after backoff and stop after the retry cap", () => {
+  const now = Date.UTC(2026, 10, 9, 12, 0, 0);
+  assert.equal(isDeferredRetryDue({ retryCount: 0, nextRetryAt: new Date(now + 1000).toISOString() }, now), false);
+  assert.equal(isDeferredRetryDue({ retryCount: 0, nextRetryAt: new Date(now - 1000).toISOString() }, now), true);
+  assert.equal(isDeferredRetryDue({ retryCount: 5, nextRetryAt: new Date(now - 1000).toISOString() }, now), false);
+
+  const post = {
+    sourcePostId: "321",
+    sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/321",
+    contentHash: "a".repeat(64),
+    text: "A short post",
+    links: [],
+    youtubeLinks: [],
+    videoUrls: [],
+    deferredRetry: true
+  };
+  const previous = { contentHash: post.contentHash, retryCount: 2 };
+  const next = buildDeferredRecord(post, previous, now);
+  assert.equal(next.retryCount, 3);
+  assert.equal(Date.parse(next.nextRetryAt), now + 24 * 60 * 60 * 1000 * 8);
+
+  const edited = buildDeferredRecord({ ...post, contentHash: "b".repeat(64), deferredRetry: false }, previous, now);
+  assert.equal(edited.retryCount, 0);
+});
+
+test("partial KV commit leaves a journal that the next owner can replay idempotently", async () => {
+  const store = new Map();
+  let failKey = "trainer:post_hashes:NDS4ALLVIDEOS";
+  const env = {
+    DB: mockLeaseDb(true),
+    KNOWLEDGE: {
+      async get(key) { return store.has(key) ? store.get(key) : null; },
+      async put(key, value) {
+        if (key === failKey) throw new Error("simulated KV outage");
+        store.set(key, value);
+      },
+      async delete(key) { store.delete(key); }
+    }
+  };
+  const writes = [
+    { key: "knowledge_NDS_pending", value: JSON.stringify([{ id: "nds_test" }]) },
+    { key: "trainer:post_hashes:NDS4ALLVIDEOS", value: JSON.stringify({ "321": "hash" }) }
+  ];
+  await assert.rejects(persistKnowledgeCommit(env, "owner-1", writes), /simulated KV outage/);
+  assert.equal(store.has("trainer:commit_journal"), true);
+  assert.equal(store.has("knowledge_NDS_pending"), true);
+  assert.equal(store.has("trainer:post_hashes:NDS4ALLVIDEOS"), false);
+
+  failKey = null;
+  assert.equal(await recoverPendingKnowledgeCommit(env, "owner-2"), true);
+  assert.deepEqual(JSON.parse(store.get("knowledge_NDS_pending")), [{ id: "nds_test" }]);
+  assert.deepEqual(JSON.parse(store.get("trainer:post_hashes:NDS4ALLVIDEOS")), { "321": "hash" });
+  assert.equal(store.has("trainer:commit_journal"), false);
+});
+
+test("commit journal rejects keys outside the Trainer write allowlist", async () => {
+  const store = new Map([["trainer:commit_journal", JSON.stringify({
+    version: 1,
+    writes: [{ key: "some-unrelated-key", value: "bad" }]
+  })]]);
+  const env = {
+    DB: mockLeaseDb(true),
+    KNOWLEDGE: {
+      async get(key) { return store.get(key) ?? null; },
+      async put(key, value) { store.set(key, value); },
+      async delete(key) { store.delete(key); }
+    }
+  };
+  await assert.rejects(recoverPendingKnowledgeCommit(env, "owner-1"), /invalid or duplicate write/);
+  assert.equal(store.has("some-unrelated-key"), false);
 });
