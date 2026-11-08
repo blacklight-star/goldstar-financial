@@ -92,6 +92,29 @@ test("bootstrap activation rejects replay and does not create a second session",
 });
 
 
+function standaloneValidPayload() {
+  return {
+    status: { error_code: 0 },
+    data: {
+      BTC: {
+        id: 1,
+        name: "Bitcoin",
+        symbol: "BTC",
+        cmc_rank: 1,
+        quote: { USD: {
+          price: 65000,
+          volume_24h: 1000,
+          market_cap: 1200000,
+          percent_change_1h: 0.2,
+          percent_change_24h: 1.1,
+          percent_change_7d: 3.2,
+          last_updated: "2026-11-08T10:00:00.000Z"
+        } }
+      }
+    }
+  };
+}
+
 function makeSecureMocks(sessionToken) {
   const sessionHash = createHash("sha256").update(sessionToken).digest("hex");
   const vaultState = { sessionHash, credential: null, consumed: false, sessionWrites: 0 };
@@ -156,7 +179,7 @@ test("CMC owner credential is validated, AES-GCM encrypted at rest, and reused f
         status: 200, headers: { "content-type": "application/json" }
       });
     }
-    return new Response(JSON.stringify(validPayload()), {
+    return new Response(JSON.stringify(standaloneValidPayload()), {
       status: 200, headers: { "content-type": "application/json" }
     });
   };
