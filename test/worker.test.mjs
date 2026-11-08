@@ -284,7 +284,8 @@ test("source evidence HMAC is mandatory and tamper-evident", async () => {
   const noKeyResponse = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([valid.id], [valid]), headers), noKey.env, ctx);
   assert.equal(noKeyResponse.status, 409);
 
-  const tampered = evidenceRule({ sourcePostContentHash: "0".repeat(64) });
+  const tampered = evidenceRule();
+  tampered.sourcePostContentHash = "0".repeat(64);
   const tamperedState = makeEnv({ pending: [tampered] });
   const tamperedResponse = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([tampered.id], [tampered]), headers), tamperedState.env, ctx);
   assert.equal(tamperedResponse.status, 409);
