@@ -248,7 +248,7 @@ test("general API key cannot approve NDS rules", async () => {
 
 test("all knowledge and strategy read failures fail closed instead of reporting empty state", async () => {
   const knowledgeState = makeEnv({ kvOptions: { failGetKeys: ["knowledge_NDS"] } });
-  const knowledgeResponse = await worker.fetch(makeRequest("/knowledge/nds", undefined, {
+  const knowledgeResponse = await worker.fetch(makeRequest("/knowledge/NDS", undefined, {
     "X-API-Key": "general-api-key"
   }), knowledgeState.env, ctx);
   assert.equal(knowledgeResponse.status, 500);
@@ -286,6 +286,9 @@ test("source evidence HMAC is mandatory and tamper-evident", async () => {
 
   const tampered = evidenceRule();
   tampered.sourcePostContentHash = "0".repeat(64);
+  const tamperedExpectedSignature = createHmac("sha256", TEST_NDS_EVIDENCE_KEY)
+    .update(JSON.stringify(sourceEvidencePayloadForTest(tampered))).digest("hex");
+  assert.notEqual(tampered.sourceEvidenceSignature, tamperedExpectedSignature);
   const tamperedState = makeEnv({ pending: [tampered] });
   const tamperedResponse = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([tampered.id], [tampered]), headers), tamperedState.env, ctx);
   assert.equal(tamperedResponse.status, 409);
