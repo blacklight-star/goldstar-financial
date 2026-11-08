@@ -63,7 +63,7 @@ jobs:
               console.error("Trainer/L2 HMAC key parity failed:", data);
               process.exit(1);
             }
-            console.log("Trainer V23 and Financial L2 V31 verified the same fixed HMAC fixture; no secret disclosed");
+            console.log("Trainer V23 and Financial L2 V32 verified the same fixed HMAC fixture; no secret disclosed");
           '
 
 
