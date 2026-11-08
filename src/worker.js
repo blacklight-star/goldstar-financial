@@ -13,6 +13,13 @@ const NDS_CHANNELS = [
   {url:"https://t.me/s/BNJ1I",name:"BNJ1I"},
   {url:"https://t.me/s/cottagends",name:"cottagends"},
 ];
+const NDS_AUTHOR_LINKED_DOCUMENTS = new Map([
+  ["129627974", {
+    path: "/129627974/NDS_Strategy_English_Version",
+    sourceOriginType: "author_linked_independent_platform",
+    sourceCaptureMethod: "academia_author_published_document_html"
+  }]
+]);
 
 function ok(data, s) {
   if (!s) s = 200;
@@ -180,7 +187,7 @@ async function sha256Hex(value) {
 }
 
 function sourceEvidencePayload(rule) {
-  return {
+  var payload = {
     id: String(rule.id || ""),
     contentType: String(rule.contentType || ""),
     category: String(rule.category || ""),
@@ -191,17 +198,18 @@ function sourceEvidencePayload(rule) {
     sourcePostUrl: String(rule.sourcePostUrl || ""),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
-    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
-    sourceExcerptVerified: rule.sourceExcerptVerified === true
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
   };
+  if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
+  payload.sourceExcerptVerified = rule.sourceExcerptVerified === true;
+  return payload;
 }
 
 async function hasVerifiedRuleEvidence(rule, env) {
   if (!rule || typeof rule !== "object" ||
       rule.validationStatus !== "pending" ||
       rule.contentType !== "trading_rule" ||
-      rule.sourceExcerptVerified !== true ||
-      rule.sourceCaptureMethod !== "telegram_public_post_html") return false;
+      rule.sourceExcerptVerified !== true) return false;
   var sourcePostId = String(rule.sourcePostId || "").trim();
   var sourcePostUrl = String(rule.sourcePostUrl || "").trim();
   var excerpt = String(rule.sourceExcerpt || "").trim();
@@ -216,10 +224,26 @@ async function hasVerifiedRuleEvidence(rule, env) {
       env.NDS_EVIDENCE_HMAC_KEY.length < 32) return false;
   try {
     var sourceUrl = new URL(sourcePostUrl);
-    if (sourceUrl.protocol !== "https:" || sourceUrl.hostname !== "t.me") return false;
-    var match = sourceUrl.pathname.match(/^\/s\/([A-Za-z0-9_]+)\/(\d+)$/);
-    if (!match || match[2] !== sourcePostId) return false;
-    if (!NDS_CHANNELS.some(function(channel) { return channel.name === match[1]; })) return false;
+    if (sourceUrl.protocol !== "https:") return false;
+    var captureMethod = String(rule.sourceCaptureMethod || "");
+    var originType = String(rule.sourceOriginType || "");
+    if (captureMethod === "telegram_public_post_html" &&
+        (originType === "official_telegram_channel" || originType === "")) {
+      // Empty origin type is accepted only for previously signed Telegram records.
+      if (sourceUrl.hostname !== "t.me") return false;
+      var telegramMatch = sourceUrl.pathname.match(/^\\/s\\/([A-Za-z0-9_]+)\\/(\\d+)$/);
+      if (!telegramMatch || telegramMatch[2] !== sourcePostId) return false;
+      if (!NDS_CHANNELS.some(function(channel) { return channel.name === telegramMatch[1]; })) return false;
+    } else if (captureMethod === "academia_author_published_document_html" &&
+        originType === "author_linked_independent_platform") {
+      var authorDoc = NDS_AUTHOR_LINKED_DOCUMENTS.get(sourcePostId);
+      if (!authorDoc || !["academia.edu", "www.academia.edu"].includes(sourceUrl.hostname) ||
+          sourceUrl.pathname.replace(/\\/$/, "") !== authorDoc.path ||
+          authorDoc.sourceOriginType !== originType ||
+          authorDoc.sourceCaptureMethod !== captureMethod) return false;
+    } else {
+      return false;
+    }
   } catch (_) {
     return false;
   }
@@ -249,6 +273,7 @@ async function buildPreviewHmacParityRule(signature) {
     sourceExcerptHash: await sha256Hex(sourceExcerpt),
     sourcePostContentHash: await sha256Hex("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction."),
     sourceCaptureMethod: "telegram_public_post_html",
+    sourceOriginType: "official_telegram_channel",
     sourceExcerptVerified: true,
     sourceEvidenceSignature: String(signature || "").trim().toLowerCase()
   };
@@ -259,7 +284,7 @@ function parseJsonSafe(value) {
 }
 
 function financialRuleEvidencePayload(rule) {
-  return {
+  var payload = {
     id: String(rule.id || ""),
     validationStatus: String(rule.validationStatus || ""),
     contentType: String(rule.contentType || ""),
@@ -271,10 +296,12 @@ function financialRuleEvidencePayload(rule) {
     sourcePostUrl: String(rule.sourcePostUrl || ""),
     sourceExcerptHash: String(rule.sourceExcerptHash || ""),
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
-    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
-    sourceEvidenceSignature: String(rule.sourceEvidenceSignature || ""),
-    sourceExcerptVerified: rule.sourceExcerptVerified === true
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
   };
+  if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
+  payload.sourceEvidenceSignature = String(rule.sourceEvidenceSignature || "");
+  payload.sourceExcerptVerified = rule.sourceExcerptVerified === true;
+  return payload;
 }
 
 function constantTimeEqual(left, right) {
