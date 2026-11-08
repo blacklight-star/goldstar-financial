@@ -107,6 +107,32 @@ async function sha256Hex(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
+function sourceEvidencePayload(rule) {
+  return {
+    id: String(rule.id || ""),
+    contentType: String(rule.contentType || ""),
+    sourcePostId: String(rule.sourcePostId || ""),
+    sourcePostUrl: String(rule.sourcePostUrl || ""),
+    sourceExcerptHash: String(rule.sourceExcerptHash || ""),
+    sourcePostContentHash: String(rule.sourcePostContentHash || ""),
+    sourceCaptureMethod: String(rule.sourceCaptureMethod || ""),
+    sourceExcerptVerified: rule.sourceExcerptVerified === true
+  };
+}
+
+export async function signSourceEvidence(env, rule) {
+  if (!env || typeof env.NDS_EVIDENCE_HMAC_KEY !== "string" || env.NDS_EVIDENCE_HMAC_KEY.length < 32) {
+    throw new Error("NDS evidence signing key unavailable; candidate cannot be persisted");
+  }
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(env.NDS_EVIDENCE_HMAC_KEY),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC", key, new TextEncoder().encode(JSON.stringify(sourceEvidencePayload(rule)))
+  );
+  return Array.from(new Uint8Array(signature), byte => byte.toString(16).padStart(2, "0")).join("");
+}
 function cleanTelegramHtml(value) {
   return String(value || "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
@@ -285,6 +311,19 @@ async function runDryRun(env, channelName, fetchOnly) {
 }
 
 async function runScheduledTraining(env) {
+  if (!env.NDS_EVIDENCE_HMAC_KEY || env.NDS_EVIDENCE_HMAC_KEY.length < 32) {
+    const blocked = {
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      success: false,
+      executionStatus: "blocked",
+      learningSuccess: false,
+      learningStatus: "evidence_signing_key_missing",
+      error: "NDS_EVIDENCE_HMAC_KEY is required; no training or persistence was performed."
+    };
+    await env.KNOWLEDGE.put("trainer:last_run", JSON.stringify(blocked));
+    return blocked;
+  }
   const quotaBackoff = await env.KNOWLEDGE.get("trainer:ai_quota_backoff");
   const budgetBackoff = await env.KNOWLEDGE.get("trainer:ai_budget_backoff");
   const transientBackoff = await env.KNOWLEDGE.get("trainer:ai_transient_backoff");
@@ -436,7 +475,7 @@ async function runScheduledTraining(env) {
           const fingerprint = ruleText.toLowerCase().replace(/\s+/g, " ");
           if (seen.has(fingerprint)) continue;
           seen.add(fingerprint);
-          additions.push({
+          const addition = {
             ...item,
             id: "nds_" + crypto.randomUUID(),
             style: "NDS",
@@ -457,7 +496,9 @@ async function runScheduledTraining(env) {
             sourceCaptureMethod: "telegram_public_post_html",
             collectedAt: new Date().toISOString(),
             validationStatus: "pending"
-          });
+          };
+          addition.sourceEvidenceSignature = await signSourceEvidence(env, addition);
+          additions.push(addition);
           addedForChannel++;
         }
         for (const post of batch) nextHashMap[String(post.sourcePostId)] = post.contentHash;
