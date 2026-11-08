@@ -59,7 +59,7 @@ jobs:
           check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
 
       - name: One-time BTC/USD CMC preview smoke test
-        if: github.event_name == 'push' && github.ref == 'refs/heads/security/require-l1-bridge-for-rule-approval' && contains(github.event.head_commit.message, '[CMC-ONESHOT]')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/security/require-l1-bridge-for-rule-approval'
         shell: bash
         run: |
           set -euo pipefail
