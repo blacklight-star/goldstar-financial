@@ -4,16 +4,76 @@ const CHANNELS = [
   { url: "https://t.me/s/BNJ1I", name: "BNJ1I" },
   { url: "https://t.me/s/cottagends", name: "cottagends" }
 ];
-const INDEPENDENT_ARCHIVE_SOURCES = [
+const ACADEMIA_PRIMARY_DOCUMENTS = [
   {
-    url: "https://www.academia.edu/129627974/NDS_Strategy_English_Version",
-    name: "NDS_Academia_Strategy_English_V1",
     documentId: "129627974",
-    sourceType: "independent_document",
-    sourceOriginType: "author_linked_independent_platform",
-    sourceCaptureMethod: "academia_author_published_document_html",
-    sourceRole: "author_linked_document",
-    ingestionEnabled: false
+    title: "NDS Strategy English Version",
+    author: "Dr. Iraj Jafarian",
+    url: "https://www.academia.edu/129627974/NDS_Strategy_English_Version",
+    authorityTier: "primary",
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceRole: "primary_core_methodology",
+    format: "application/pdf",
+    acquisitionMode: "user_initiated_first_party_download",
+    automatedSiteAccessAllowed: false,
+    status: "awaiting_authorized_pdf_import"
+  },
+  {
+    documentId: "129628090",
+    title: "NDS farsi",
+    author: "Dr. Iraj Jafarian",
+    url: "https://www.academia.edu/129628090/NDS_farsi",
+    authorityTier: "primary",
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceRole: "primary_core_methodology",
+    format: "application/pdf",
+    acquisitionMode: "user_initiated_first_party_download",
+    automatedSiteAccessAllowed: false,
+    status: "awaiting_authorized_pdf_import"
+  },
+  {
+    documentId: "122576333",
+    title: "Nodal Displacement Sequencing (NDS) New Approach",
+    author: "Dr. Iraj Jafarian",
+    url: "https://www.academia.edu/122576333/Nodal_Displacement_Sequencing_NDS_New_Approach",
+    authorityTier: "primary",
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceRole: "primary_author_supplement",
+    format: "application/pdf",
+    acquisitionMode: "user_initiated_first_party_download",
+    automatedSiteAccessAllowed: false,
+    status: "awaiting_authorized_pdf_import"
+  },
+  {
+    documentId: "122966805",
+    title: "Advanced Money Management Strategy Applicable to Nodal Displacement Geometry",
+    author: "Dr. Iraj Jafarian",
+    url: "https://www.academia.edu/122966805/Advanced_Money_Management_Strategy_Applicable_to_Nodal_Displacement_Geometry",
+    authorityTier: "primary",
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceRole: "primary_author_supplement",
+    format: "application/pdf",
+    acquisitionMode: "user_initiated_first_party_download",
+    automatedSiteAccessAllowed: false,
+    status: "awaiting_authorized_pdf_import"
+  },
+  {
+    documentId: "122832409",
+    title: "Advanced Quantitative Trading: Integrating AI with NDS",
+    authors: ["Dr. Iraj Jafarian", "Ramin Rostami"],
+    url: "https://www.academia.edu/122832409/Advanced_Quantitative_Trading_Integrating_Artificial_Intelligence_with_Nodal_Displacement_Sequencing",
+    authorityTier: "primary",
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceRole: "coauthored_author_supplement",
+    format: "application/pdf",
+    acquisitionMode: "user_initiated_first_party_download",
+    automatedSiteAccessAllowed: false,
+    status: "awaiting_authorized_pdf_import"
   }
 ];
 const TGME_ARCHIVE_POSTS = [
@@ -322,6 +382,8 @@ function sourceEvidencePayload(rule) {
     sourcePostContentHash: String(rule.sourcePostContentHash || ""),
     sourceCaptureMethod: String(rule.sourceCaptureMethod || "")
   };
+  if (rule.sourceDocumentFormat) payload.sourceDocumentFormat = String(rule.sourceDocumentFormat);
+  if (rule.sourceDocumentSha256) payload.sourceDocumentSha256 = String(rule.sourceDocumentSha256).toLowerCase();
   // Preserve signatures issued before origin typing was introduced; all new
   // independent-platform records must carry an explicit signed origin type.
   if (rule.sourceOriginType) payload.sourceOriginType = String(rule.sourceOriginType);
@@ -502,68 +564,6 @@ export function extractAcademiaDocumentText(html) {
   return text.slice(0, 80000);
 }
 
-async function readAcademiaDocument(env, source) {
-  if (!source || source.sourceOriginType !== "author_linked_independent_platform" ||
-      source.sourceCaptureMethod !== "academia_author_published_document_html" ||
-      source.documentId !== "129627974") {
-    throw new Error("Independent archive source is not in the Trainer allowlist");
-  }
-  const requested = new URL(source.url);
-  if (requested.protocol !== "https:" || requested.hostname !== "www.academia.edu" ||
-      requested.pathname.split("/")[1] !== source.documentId) {
-    throw new Error("Independent archive URL failed exact allowlist validation");
-  }
-  const response = await fetch(source.url, {
-    redirect: "follow",
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; GoldstarTrainer/1.0)",
-      "Accept": "text/html,application/xhtml+xml"
-    }
-  });
-  const finalUrl = new URL(response.url || source.url);
-  if (!response.ok) throw new Error("Academia HTTP " + response.status);
-  if (!["academia.edu", "www.academia.edu"].includes(finalUrl.hostname) ||
-      finalUrl.pathname.split("/")[1] !== source.documentId ||
-      finalUrl.pathname.replace(/\/$/, "") !== requested.pathname.replace(/\/$/, "")) {
-    throw new Error("Academia redirected outside the allowlisted document identity");
-  }
-  const html = await response.text();
-  const text = extractAcademiaDocumentText(html);
-  const pageTitle = ((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "").replace(/<[^>]+>/g, " ").trim();
-  if (text.length < 1200) throw new Error("Academia page did not expose enough document text for source verification");
-  if (!/NDS Strategy English Version/i.test(pageTitle + " " + text.slice(0, 1200)) ||
-      !/Iraj Jafarian/i.test(text)) {
-    throw new Error("Academia document title/author identity did not match the allowlisted NDS source");
-  }
-  const post = {
-    sourcePostId: source.documentId,
-    sourcePostKey: "academia/" + source.documentId,
-    sourcePostUrl: source.url,
-    text,
-    links: [],
-    youtubeLinks: [],
-    videoUrls: [],
-    sourceCaptureMethod: source.sourceCaptureMethod,
-    sourceOriginType: source.sourceOriginType
-  };
-  const posts = [post];
-  const marker = await channelContentMarker(posts, text);
-  const diagnostics = {
-    requestedUrl: source.url,
-    finalUrl: finalUrl.toString(),
-    httpStatus: response.status,
-    responseOk: response.ok,
-    redirected: response.redirected === true,
-    htmlLength: html.length,
-    extractedTextLength: text.length,
-    pageTitle: ((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "").replace(/<[^>]+>/g, " ").trim().slice(0, 180),
-    documentId: source.documentId,
-    sourceOriginType: source.sourceOriginType,
-    sourceCaptureMethod: source.sourceCaptureMethod
-  };
-  return { html, text, marker, postIds: [post.sourcePostKey], posts, hasPosts: true, diagnostics };
-}
-
 async function readTgmeArchivePost(source) {
   if (!source || source.sourceType !== "independent_post_archive" ||
       source.sourceOriginType !== "third_party_telegram_archive" ||
@@ -635,14 +635,13 @@ async function readTgmeArchivePost(source) {
 }
 
 async function readSource(env, source) {
-  if (source.sourceType === "independent_document") return readAcademiaDocument(env, source);
   if (source.sourceType === "independent_post_archive") return readTgmeArchivePost(source);
   return readChannel(env, source);
 }
 
 function buildPromptPosts(eligiblePosts) {
   return eligiblePosts.flatMap(post => {
-    if (post.sourceCaptureMethod !== "academia_author_published_document_html") {
+    if (post.sourceCaptureMethod !== "academia_account_pdf_download") {
       return [{ sourcePostId: post.sourcePostId, text: post.text.slice(0, 1600) }];
     }
     const segments = post.text.split(/\n+/)
@@ -1069,39 +1068,16 @@ export default {
         channels: results
       });
     }
-    if (url.pathname === "/__preview/independent-archive-diagnostics" && request.method === "GET" &&
+    if (url.pathname === "/__preview/primary-source-catalog" && request.method === "GET" &&
         isAllowedPreviewHost(url)) {
-      const results = await Promise.all(INDEPENDENT_ARCHIVE_SOURCES.map(async function(source) {
-        try {
-          const page = await readAcademiaDocument(env, source);
-          return {
-            name: source.name,
-            sourceOriginType: source.sourceOriginType,
-            sourceCaptureMethod: source.sourceCaptureMethod,
-            success: true,
-            documentId: source.documentId,
-            textLength: page.text.length,
-            contentHash: await sha256Hex(page.text),
-            diagnostics: page.diagnostics
-          };
-        } catch (error) {
-          return {
-            name: source.name,
-            sourceOriginType: source.sourceOriginType,
-            sourceCaptureMethod: source.sourceCaptureMethod,
-            success: false,
-            documentId: source.documentId,
-            error: String(error.message || error).slice(0, 240)
-          };
-        }
-      }));
       return json({
-        ok: results.length === INDEPENDENT_ARCHIVE_SOURCES.length &&
-          results.every(item => item.success && item.textLength >= 1200),
+        ok: true,
         dryRun: true,
+        fetchedFromAcademia: false,
         persisted: false,
         aiCalled: false,
-        sources: results
+        acquisitionPolicy: "user-initiated first-party PDF download only; automated Academia site access disabled",
+        sources: ACADEMIA_PRIMARY_DOCUMENTS
       });
     }
     if (url.pathname === "/__preview/tgme-archive-diagnostics" && request.method === "GET" &&
