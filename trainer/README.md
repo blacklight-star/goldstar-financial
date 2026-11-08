@@ -50,6 +50,28 @@ CI run:
 
 No AI calls, KV/D1 writes, training, approvals, Cron changes, active deployments, or Production changes were performed. Trainer Staging Cron remains empty; Trainer Staging active deployment remains V9; L2 active deployment remains the pre-existing version. All new Worker versions are Preview-only.
 
+## Live source-readiness result (2026-11-09)
+
+Latest Preview validation after the Academia authority correction:
+- Trainer V27 unit tests: **27/27 passed**.
+- Financial L2 V36 unit tests: **75/75 passed**.
+- Trainer V27 health and parser self-test passed.
+- Cross-Worker HMAC parity passed between Trainer V27 and Financial L2 V36.
+- Academia primary-source catalog check passed: five author-listed PDFs are classified as primary; no Academia request was made by the Worker.
+- Six TG.ME individual post pages were checked for IDs/canonical links/captions. All six exposed zero video tags, source tags, or direct media URLs; they remain metadata-only.
+- The strict configured Telegram-source gate remains red by design: NDS4ALLVIDEOS returned 20 posts; FuzzyLogic_NDS, BNJ1I, and cottagends returned zero parsed posts.
+
+CI:
+- [Trainer V27 source gate](https://github.com/blacklight-star/goldstar-financial/actions/runs/42534405204) — unit tests, health, parser, HMAC, Academia primary-source catalog, and TG.ME metadata checks passed; final official Telegram gate remains blocked.
+- [Financial L2 V36 CI](https://github.com/blacklight-star/goldstar-financial/actions/runs/42534412570) — 75/75 tests and Preview health passed.
+
+Preview and deployment boundary:
+- Trainer V27 and L2 V36 are immutable Preview versions only.
+- Trainer Staging active deployment remains V9; Trainer Staging schedule remains empty.
+- L2 active deployment remains the previously deployed version; L2 schedule remains empty.
+- Both PRs remain Draft and unmerged.
+- No AI call, KV/D1 write, NDS training run, rule approval, Cron change, active deployment, or Production change was performed.
+
 ## NDS Source Authority & Acquisition Policy (2026-11-09)
 
 ### Priority 1 — Academia: primary author-published NDS source
