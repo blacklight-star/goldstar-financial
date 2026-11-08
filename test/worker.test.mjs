@@ -9,6 +9,7 @@ function makeKv(initial = {}, kvOptions = {}) {
     key,
     typeof value === "string" ? value : JSON.stringify(value)
   ]));
+  let putCalls = 0;
   return {
     values,
     async get(key, options = {}) {
@@ -18,7 +19,10 @@ function makeKv(initial = {}, kvOptions = {}) {
       return options.type === "json" ? JSON.parse(value) : value;
     },
     async put(key, value) {
-      if ((kvOptions.failPutKeys || []).includes(key)) throw new Error("simulated KV write failure");
+      putCalls++;
+      if ((kvOptions.failPutKeys || []).includes(key) || (kvOptions.failPutCalls || []).includes(putCalls)) {
+        throw new Error("simulated KV write failure");
+      }
       values.set(key, String(value));
     }
   };
@@ -402,6 +406,20 @@ test("partial KV approval failure rolls back active rules and retains a failed a
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
   assert.equal([...state.DB.rows.values()][0].outcome, "failed");
+});
+
+test("failed rollback is recorded as reconciliation_required", async () => {
+  const rule = evidenceRule();
+  const state = makeEnv({ pending: [rule], kvOptions: { failPutCalls: [2, 3] } });
+  const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 503);
+  const audit = [...state.DB.rows.values()][0];
+  assert.equal(audit.outcome, "reconciliation_required");
+  const details = JSON.parse(audit.details_json);
+  assert.equal(details.rollbackStatus, "failed");
+  assert.equal(details.reconciliationRequired, true);
 });
 
 test("audit update failure is surfaced as pending reconciliation", async () => {
