@@ -959,6 +959,7 @@ test("Preview-only HMAC interoperability route verifies the fixed Trainer fixtur
     sourceExcerptHash: createHash("sha256").update("Preview-only NDS HMAC parity fixture: Hook precedes Rally, and the Flag follows the Rally.").digest("hex"),
     sourcePostContentHash: createHash("sha256").update("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction.").digest("hex"),
     sourceCaptureMethod: "telegram_public_post_html",
+    sourceOriginType: "official_telegram_channel",
     sourceExcerptVerified: true
   };
   const signature = createHmac("sha256", TEST_NDS_EVIDENCE_KEY)
