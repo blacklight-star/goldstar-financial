@@ -126,7 +126,7 @@ export default {
     let providerStatus = null;
     try {
       await env.DB.prepare("INSERT INTO cmc_ingestion_runs (run_id, status, symbols, records_written, provider_status, started_at, completed_at, error_message) VALUES (?, 'running', ?, 0, NULL, ?, NULL, NULL)").bind(runId, symbols.join(","), startedAt).run();
-      const apiUrl = new URL("https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest");
+      const apiUrl = new URL("https://pro-api.coinmarketcap.com/v3/cryptocurrency/quotes/latest");
       apiUrl.searchParams.set("symbol", symbols.join(","));
       apiUrl.searchParams.set("convert", convert);
       const upstream = await fetch(apiUrl.toString(), { method: "GET", headers: { "X-CMC_PRO_API_KEY": env.CMC_API_KEY, "Accept": "application/json" } });
@@ -135,18 +135,19 @@ export default {
       try { payload = await upstream.json(); } catch { throw new Error("CMC returned a non-JSON response"); }
       if (!upstream.ok || payload?.status?.error_code !== 0) throw new Error("CMC error: " + String(payload?.status?.error_message || "CMC request failed").slice(0, 300));
       const data = payload?.data;
-      if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("CMC response data is missing or invalid");
+      if (!Array.isArray(data)) throw new Error("CMC V3 response data must be an array");
       const ingestedAt = new Date().toISOString();
       const completedAt = new Date().toISOString();
       const quoteStatements = [];
-      for (const symbol of symbols) {
-        const candidates = data[symbol];
-        const coins = Array.isArray(candidates) ? candidates : candidates ? [candidates] : [];
-        for (const coin of coins) {
-          const quote = coin?.quote?.[convert];
-          if (!coin || !Number.isInteger(coin.id) || !quote || typeof quote.last_updated !== "string" || !Number.isFinite(Date.parse(quote.last_updated))) continue;
-          quoteStatements.push(env.DB.prepare("INSERT INTO cmc_quotes (cmc_id, symbol, name, quote_currency, price, volume_24h, market_cap, percent_change_1h, percent_change_24h, percent_change_7d, cmc_rank, quote_last_updated, ingested_at, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(cmc_id, quote_currency, quote_last_updated) DO UPDATE SET symbol=excluded.symbol, name=excluded.name, price=excluded.price, volume_24h=excluded.volume_24h, market_cap=excluded.market_cap, percent_change_1h=excluded.percent_change_1h, percent_change_24h=excluded.percent_change_24h, percent_change_7d=excluded.percent_change_7d, cmc_rank=excluded.cmc_rank, ingested_at=excluded.ingested_at, raw_json=excluded.raw_json").bind(coin.id, String(coin.symbol || symbol), String(coin.name || ""), convert, numberOrNull(quote.price), numberOrNull(quote.volume_24h), numberOrNull(quote.market_cap), numberOrNull(quote.percent_change_1h), numberOrNull(quote.percent_change_24h), numberOrNull(quote.percent_change_7d), Number.isInteger(coin.cmc_rank) ? coin.cmc_rank : null, quote.last_updated, ingestedAt, JSON.stringify(coin)));
-        }
+      for (const coin of data) {
+        const symbol = String(coin?.symbol || "").trim().toUpperCase();
+        if (!symbols.includes(symbol) || !Number.isInteger(coin?.id)) continue;
+        const quoteList = Array.isArray(coin.quote)
+          ? coin.quote
+          : (coin.quote && typeof coin.quote === "object" && coin.quote[convert] ? [coin.quote[convert]] : []);
+        const quote = quoteList.find(item => String(item?.symbol || convert).trim().toUpperCase() === convert);
+        if (!quote || typeof quote.last_updated !== "string" || !Number.isFinite(Date.parse(quote.last_updated))) continue;
+        quoteStatements.push(env.DB.prepare("INSERT INTO cmc_quotes (cmc_id, symbol, name, quote_currency, price, volume_24h, market_cap, percent_change_1h, percent_change_24h, percent_change_7d, cmc_rank, quote_last_updated, ingested_at, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(cmc_id, quote_currency, quote_last_updated) DO UPDATE SET symbol=excluded.symbol, name=excluded.name, price=excluded.price, volume_24h=excluded.volume_24h, market_cap=excluded.market_cap, percent_change_1h=excluded.percent_change_1h, percent_change_24h=excluded.percent_change_24h, percent_change_7d=excluded.percent_change_7d, cmc_rank=excluded.cmc_rank, ingested_at=excluded.ingested_at, raw_json=excluded.raw_json").bind(coin.id, symbol, String(coin.name || ""), convert, numberOrNull(quote.price), numberOrNull(quote.volume_24h), numberOrNull(quote.market_cap), numberOrNull(quote.percent_change_1h), numberOrNull(quote.percent_change_24h), numberOrNull(quote.percent_change_7d), Number.isInteger(coin.cmc_rank) ? coin.cmc_rank : null, quote.last_updated, ingestedAt, JSON.stringify(coin)));
       }
       if (quoteStatements.length === 0) throw new Error("CMC returned no valid quote records for requested symbols");
       const finalStatements = [...quoteStatements, env.DB.prepare("UPDATE cmc_ingestion_runs SET status = 'success', provider_status = ?, records_written = ?, completed_at = ?, error_message = NULL WHERE run_id = ?").bind(providerStatus, quoteStatements.length, completedAt, runId)];
