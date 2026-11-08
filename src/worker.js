@@ -416,12 +416,26 @@ export default {
           await env.KNOWLEDGE.put("knowledge_NDS", JSON.stringify(active.concat(promoted)));
           await env.KNOWLEDGE.put("knowledge_NDS_pending", JSON.stringify(remaining));
         } catch (_) {
+          var rollbackSucceeded = false;
           try {
             await env.KNOWLEDGE.put("knowledge_NDS", JSON.stringify(active));
-            await env.DB.prepare("UPDATE gs_audit_log SET outcome = ?, details_json = ? WHERE event_id = ?")
-              .bind("failed", JSON.stringify(Object.assign({}, auditDetails, { failure: "KV write failed; rollback attempted" })), auditId).run();
+            rollbackSucceeded = true;
           } catch (_) {}
-          return err("Approval storage failed; rollback was attempted and the audit record was retained", 503);
+          var failureDetails = Object.assign({}, auditDetails, {
+            failure: "KV write failed",
+            rollbackStatus: rollbackSucceeded ? "restored" : "failed",
+            reconciliationRequired: !rollbackSucceeded
+          });
+          try {
+            await env.DB.prepare("UPDATE gs_audit_log SET outcome = ?, details_json = ? WHERE event_id = ?")
+              .bind(rollbackSucceeded ? "failed" : "reconciliation_required", JSON.stringify(failureDetails), auditId).run();
+          } catch (_) {}
+          return err(
+            rollbackSucceeded
+              ? "Approval storage failed; active knowledge rollback succeeded and the audit record was retained"
+              : "Approval storage failed and rollback could not be confirmed; manual reconciliation is required",
+            503
+          );
         }
         try {
           await env.DB.prepare("UPDATE gs_audit_log SET outcome = ?, details_json = ? WHERE event_id = ?")
