@@ -1114,7 +1114,7 @@ export default {
         return json({ ok: false, error: "Source registry D1 unavailable", dryRun: true, aiCalled: false, persisted: false }, 503);
       }
       try {
-        const [documents, flagGroups, moduleGroups, candidateRows] = await Promise.all([
+        const [documents, flagGroups, moduleGroups, candidateRows, assessmentGroups] = await Promise.all([
           readAllD1(env.DB.prepare(
             "SELECT d.source_id, d.source_document_id, d.title, d.source_origin_type, d.source_role, d.authority_tier, d.file_sha256, d.page_count, d.pages_with_text, d.status, d.technical_review_status, COUNT(c.chunk_id) AS imported_pages, SUM(CASE WHEN c.content_type = 'text' THEN 1 ELSE 0 END) AS text_chunks, SUM(CASE WHEN c.content_type = 'visual_only' THEN 1 ELSE 0 END) AS visual_chunks, SUM(c.content_chars) AS extracted_chars FROM gs_source_documents d LEFT JOIN gs_source_chunks c ON c.source_id = d.source_id GROUP BY d.source_id ORDER BY CASE d.authority_tier WHEN 'primary_author_source' THEN 0 ELSE 1 END, d.source_id"
           )),
@@ -1126,6 +1126,9 @@ export default {
           )),
           readAllD1(env.DB.prepare(
             "SELECT COUNT(*) AS total, SUM(CASE WHEN approval_status = 'not_approved' THEN 1 ELSE 0 END) AS unapproved, SUM(CASE WHEN execution_eligible = 0 THEN 1 ELSE 0 END) AS execution_ineligible FROM gs_nds_rule_candidates"
+          )),
+          readAllD1(env.DB.prepare(
+            "SELECT pilot_status, COUNT(*) AS count FROM gs_nds_assessment_items GROUP BY pilot_status ORDER BY pilot_status"
           ))
         ]);
         const pageTotals = documents.reduce((total, item) => ({
@@ -1140,6 +1143,10 @@ export default {
         const ruleCandidates = Number(candidateSummary.total || 0);
         const unapprovedCandidates = Number(candidateSummary.unapproved || 0);
         const executionIneligibleCandidates = Number(candidateSummary.execution_ineligible || 0);
+        const assessmentItems = assessmentGroups.reduce((total, item) => total + Number(item.count || 0), 0);
+        const notPilotedAssessmentItems = assessmentGroups
+          .filter(item => item.pilot_status === "not_piloted")
+          .reduce((total, item) => total + Number(item.count || 0), 0);
         const primaryDocs = documents.filter(item => item.authority_tier === "primary_author_source");
         const allPagesPresent = documents.length === 6 && pageTotals.pages === pageTotals.imported;
         const primaryCorePresent = primaryDocs.length === 5 &&
@@ -1148,8 +1155,9 @@ export default {
         return json({
           ok: allPagesPresent && primaryCorePresent && pageTotals.pages === 202 &&
             pageTotals.text === 190 && pageTotals.visual === 12 && flags === 23 &&
-            curriculumModules === 12 && ruleCandidates === 10 &&
-            unapprovedCandidates === 10 && executionIneligibleCandidates === 10,
+            curriculumModules === 12 && ruleCandidates === 16 &&
+            unapprovedCandidates === 16 && executionIneligibleCandidates === 16 &&
+            assessmentItems === 25 && notPilotedAssessmentItems === 25,
           dryRun: true, readOnly: true, persisted: false, aiCalled: false,
           fetchedFromAcademia: false,
           sourceStatus: "documents_ingested_to_staging; curriculum_mapped; rule_candidates_not_approved_or_executable",
@@ -1160,6 +1168,10 @@ export default {
           ruleCandidates: {
             total: ruleCandidates, unapproved: unapprovedCandidates,
             executionIneligible: executionIneligibleCandidates
+          },
+          assessment: {
+            total: assessmentItems, notPiloted: notPilotedAssessmentItems,
+            groups: assessmentGroups
           },
           sources: documents
         });
