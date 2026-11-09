@@ -96,13 +96,14 @@ jobs:
                 data.primaryAuthorDocuments !== 5 || data.ownerSuppliedQuarantinedDocuments !== 1 ||
                 data.pageTotals?.pages !== 202 || data.pageTotals?.imported !== 202 ||
                 data.pageTotals?.text !== 190 || data.pageTotals?.visual !== 12 ||
-                data.reviewFlags?.total !== 23 || data.curriculum?.total !== 12 ||
-                data.ruleCandidates?.total !== 10 || data.ruleCandidates?.unapproved !== 10 ||
-                data.ruleCandidates?.executionIneligible !== 10) {
+                data.reviewFlags?.total !== 28 || data.curriculum?.total !== 12 ||
+                data.ruleCandidates?.total !== 16 || data.ruleCandidates?.unapproved !== 16 ||
+                data.ruleCandidates?.executionIneligible !== 16 ||
+                data.assessment?.total !== 25 || data.assessment?.notPiloted !== 25) {
               console.error("Trainer staged NDS source registry check failed:", JSON.stringify(data, null, 2));
               process.exit(1);
             }
-            console.log("Trainer staged corpus verified: 5 primary author PDFs + 1 quarantined supplement; 202/202 pages indexed; 190 text, 12 visual-only; 23 review flags; 12 curriculum modules; 10 unapproved/non-executable candidates; no AI, no writes");
+            console.log("Trainer staged corpus verified: 5 primary author PDFs + 1 quarantined supplement; 202/202 pages indexed; 190 text, 12 visual-only; 28 review flags; 12 curriculum modules; 16 unapproved/non-executable candidates; 25 draft assessment items not yet piloted; no AI, no writes");
           '
 
           tgme_archive="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 35 "$BASE/__preview/tgme-archive-diagnostics")"
