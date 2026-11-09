@@ -50,7 +50,7 @@ test("risk simulation estimates lot size from broker tick values and rounds down
   assert.equal(result.orderSubmitted, false);
   assert.equal(result.executionEligible, false);
   assert.equal(result.riskBudget, 100);
-  assert.equal(result.lossPerLot, 504);
+  assert.ok(Math.abs(result.lossPerLot - 504) < 1e-8);
   assert.equal(result.calculatedVolume, 0.19);
   assert.ok(result.estimatedRisk <= result.riskBudget);
 });
