@@ -7,6 +7,9 @@ const CHANNELS = [
 const ACADEMIA_PRIMARY_DOCUMENTS = [
   {
     documentId: "129627974",
+    fileSha256: "65b60fd4e6e6bdaecd849831e4cdd4b2866a97be1701e5f9ba9622b978c1b9a4",
+    pageCount: 44,
+    pagesWithText: 44,
     title: "NDS Strategy English Version",
     author: "Dr. Iraj Jafarian",
     url: "https://www.academia.edu/129627974/NDS_Strategy_English_Version",
@@ -17,10 +20,14 @@ const ACADEMIA_PRIMARY_DOCUMENTS = [
     format: "application/pdf",
     acquisitionMode: "user_initiated_first_party_download",
     automatedSiteAccessAllowed: false,
-    status: "awaiting_authorized_pdf_import"
+    status: "staging_ingested_quarantined"
   },
   {
     documentId: "129628090",
+    fileSha256: "50575a4f99a9f623c3ac2b3cf06b97d07d06bdb6b5cfed57778406d46297f4b9",
+    pageCount: 125,
+    pagesWithText: 114,
+    visualOnlyPages: [17,29,38,41,43,44,47,74,77,87,91],
     title: "NDS farsi",
     author: "Dr. Iraj Jafarian",
     url: "https://www.academia.edu/129628090/NDS_farsi",
@@ -31,10 +38,14 @@ const ACADEMIA_PRIMARY_DOCUMENTS = [
     format: "application/pdf",
     acquisitionMode: "user_initiated_first_party_download",
     automatedSiteAccessAllowed: false,
-    status: "awaiting_authorized_pdf_import"
+    status: "staging_ingested_quarantined"
   },
   {
     documentId: "122576333",
+    fileSha256: "65ab933b1e5469d8f3929e1415e0ea91d4d42c2d3333753906e4c6f70981047f",
+    pageCount: 12,
+    pagesWithText: 11,
+    visualOnlyPages: [2],
     title: "Nodal Displacement Sequencing (NDS) New Approach",
     author: "Dr. Iraj Jafarian",
     url: "https://www.academia.edu/122576333/Nodal_Displacement_Sequencing_NDS_New_Approach",
@@ -45,10 +56,13 @@ const ACADEMIA_PRIMARY_DOCUMENTS = [
     format: "application/pdf",
     acquisitionMode: "user_initiated_first_party_download",
     automatedSiteAccessAllowed: false,
-    status: "awaiting_authorized_pdf_import"
+    status: "staging_ingested_quarantined"
   },
   {
     documentId: "122966805",
+    fileSha256: "2b2b966c81fa938c8d853ea2f31dee334056cabc9ec46b0ea80ff32e62e29f73",
+    pageCount: 6,
+    pagesWithText: 6,
     title: "Advanced Money Management Strategy Applicable to Nodal Displacement Geometry",
     author: "Dr. Iraj Jafarian",
     url: "https://www.academia.edu/122966805/Advanced_Money_Management_Strategy_Applicable_to_Nodal_Displacement_Geometry",
@@ -59,10 +73,13 @@ const ACADEMIA_PRIMARY_DOCUMENTS = [
     format: "application/pdf",
     acquisitionMode: "user_initiated_first_party_download",
     automatedSiteAccessAllowed: false,
-    status: "awaiting_authorized_pdf_import"
+    status: "staging_ingested_quarantined"
   },
   {
     documentId: "122832409",
+    fileSha256: "f34e8a5c728040f908c0b43ff83b03eee7587cfd4bd96f7f73b04431faff44b0",
+    pageCount: 7,
+    pagesWithText: 7,
     title: "Advanced Quantitative Trading: Integrating AI with NDS",
     authors: ["Dr. Iraj Jafarian", "Ramin Rostami"],
     url: "https://www.academia.edu/122832409/Advanced_Quantitative_Trading_Integrating_Artificial_Intelligence_with_Nodal_Displacement_Sequencing",
@@ -73,7 +90,7 @@ const ACADEMIA_PRIMARY_DOCUMENTS = [
     format: "application/pdf",
     acquisitionMode: "user_initiated_first_party_download",
     automatedSiteAccessAllowed: false,
-    status: "awaiting_authorized_pdf_import"
+    status: "staging_ingested_quarantined"
   }
 ];
 const TGME_ARCHIVE_POSTS = [
@@ -188,6 +205,17 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
   headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
 });
+
+function isAuthorizedTrainerAdmin(request, env) {
+  const secret = env.GOLDSTAR_BRIDGE_SECRET || "";
+  return !!secret && request.headers.get("authorization") === "Bearer " + secret;
+}
+
+async function readAllD1(statement) {
+  const result = await statement.all();
+  return Array.isArray(result && result.results) ? result.results : [];
+}
+
 function extractJSON(text) {
   if (!text) return null;
   try { return JSON.parse(text); } catch {}
@@ -1130,6 +1158,69 @@ export default {
         integrations: ["Direct HTTPS fetch only", "Workers AI with 3,000-neuron daily cap", "Workers KV", "D1 atomic lock"]
       });
     }
+    // Read-only access to the owner-supplied NDS source registry.
+    // These endpoints never invoke AI, alter KV, approve rules, or write D1.
+    if (url.pathname === "/admin/source-documents" && request.method === "GET") {
+      if (!isAuthorizedTrainerAdmin(request, env)) return json({ error: "Unauthorized" }, 401);
+      if (!env.DB || typeof env.DB.prepare !== "function") return json({ error: "Source registry D1 unavailable" }, 503);
+      try {
+        const rows = await readAllD1(env.DB.prepare(
+          "SELECT source_id, source_document_id, title, authors_json, publication_date, source_platform, source_url, source_origin_type, source_capture_method, source_role, authority_tier, file_name, file_sha256, page_count, pages_with_text, visual_only_pages_json, visual_review_status, extraction_method, extracted_chars, status, technical_review_status, metadata_json FROM gs_source_documents ORDER BY CASE authority_tier WHEN 'primary_author_source' THEN 0 ELSE 1 END, source_id"
+        ));
+        return json({ ok: true, readOnly: true, aiCalled: false, persisted: false, count: rows.length, documents: rows });
+      } catch (_) {
+        return json({ ok: false, error: "Source registry read failed" }, 502);
+      }
+    }
+
+    if (url.pathname === "/admin/source-pages" && request.method === "GET") {
+      if (!isAuthorizedTrainerAdmin(request, env)) return json({ error: "Unauthorized" }, 401);
+      if (!env.DB || typeof env.DB.prepare !== "function") return json({ error: "Source registry D1 unavailable" }, 503);
+      const sourceId = String(url.searchParams.get("sourceId") || "").trim();
+      const from = Number(url.searchParams.get("from") || "1");
+      const to = Number(url.searchParams.get("to") || String(from + 9));
+      if (!/^[a-z0-9][a-z0-9-]{2,100}$/i.test(sourceId) ||
+          !Number.isSafeInteger(from) || !Number.isSafeInteger(to) ||
+          from < 1 || to < from || (to - from + 1) > 10) {
+        return json({ error: "Invalid sourceId or page range; request at most 10 pages" }, 400);
+      }
+      try {
+        const docs = await readAllD1(env.DB.prepare(
+          "SELECT source_id, title, authority_tier, status, technical_review_status FROM gs_source_documents WHERE source_id = ?"
+        ).bind(sourceId));
+        if (!docs.length) return json({ error: "Source document not found" }, 404);
+        const pages = await readAllD1(env.DB.prepare(
+          "SELECT source_id, page_number, section_title, language, content_type, content, content_sha256, content_chars, extraction_method, quality_status, review_status FROM gs_source_chunks WHERE source_id = ? AND page_number BETWEEN ? AND ? ORDER BY page_number"
+        ).bind(sourceId, from, to));
+        return json({
+          ok: true, readOnly: true, aiCalled: false, persisted: false,
+          document: docs[0], requestedPages: { from, to }, returnedPages: pages.length, pages
+        });
+      } catch (_) {
+        return json({ ok: false, error: "Source page read failed" }, 502);
+      }
+    }
+
+    if (url.pathname === "/admin/source-review-flags" && request.method === "GET") {
+      if (!isAuthorizedTrainerAdmin(request, env)) return json({ error: "Unauthorized" }, 401);
+      if (!env.DB || typeof env.DB.prepare !== "function") return json({ error: "Source registry D1 unavailable" }, 503);
+      const sourceId = String(url.searchParams.get("sourceId") || "").trim();
+      const limit = Number(url.searchParams.get("limit") || "50");
+      if ((sourceId && !/^[a-z0-9][a-z0-9-]{2,100}$/i.test(sourceId)) ||
+          !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+        return json({ error: "Invalid sourceId or limit; limit must be 1-100" }, 400);
+      }
+      try {
+        const statement = sourceId
+          ? env.DB.prepare("SELECT review_id, source_id, page_refs, severity, issue_code, title, description, status, disposition, metadata_json FROM gs_source_review_flags WHERE source_id = ? ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, review_id LIMIT ?").bind(sourceId, limit)
+          : env.DB.prepare("SELECT review_id, source_id, page_refs, severity, issue_code, title, description, status, disposition, metadata_json FROM gs_source_review_flags ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, review_id LIMIT ?").bind(limit);
+        const flags = await readAllD1(statement);
+        return json({ ok: true, readOnly: true, aiCalled: false, persisted: false, count: flags.length, flags });
+      } catch (_) {
+        return json({ ok: false, error: "Source review flag read failed" }, 502);
+      }
+    }
+
     if (url.pathname === "/admin/diagnostics" && request.method === "POST") {
       const secret = env.GOLDSTAR_BRIDGE_SECRET || "";
       if (!secret || request.headers.get("authorization") !== "Bearer " + secret) return json({ error: "Unauthorized" }, 401);
