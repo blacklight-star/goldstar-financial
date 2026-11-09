@@ -1,7 +1,7 @@
 import test from "node:test";
 import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
-import worker, { isNdsRelevantText, signSourceEvidence, renewKnowledgeWriteLock, recoverPendingKnowledgeCommit, persistKnowledgeCommit, isDeferredRetryDue, buildDeferredRecord } from "./worker.js";
+import worker, { isNdsRelevantText, signSourceEvidence, renewKnowledgeWriteLock, recoverPendingKnowledgeCommit, persistKnowledgeCommit, isDeferredRetryDue, buildDeferredRecord, sourceOriginTypeForChannel } from "./worker.js";
 
 test("health reports staging scheduler paused", async () => {
   const response = await worker.fetch(new Request("https://trainer.example/health"), {}, {});
@@ -559,4 +559,13 @@ test("TG.ME archive rejects an individual post redirected outside its exact arch
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("Telegram source origins are explicit and never default to official", () => {
+  assert.equal(sourceOriginTypeForChannel("NDS4ALLVIDEOS"), "third_party_video_archive");
+  assert.equal(sourceOriginTypeForChannel("FuzzyLogic_NDS"), "official_telegram_channel");
+  assert.equal(sourceOriginTypeForChannel("BNJ1I"), "third_party_course_aggregator");
+  assert.equal(sourceOriginTypeForChannel("cottagends"), "community_repost_channel");
+  assert.equal(sourceOriginTypeForChannel("unknown-channel"), "unverified_telegram_source");
 });
