@@ -165,7 +165,8 @@ test("NDS source registry admin reads are bounded, authenticated, and side-effec
   ), env);
   assert.equal(rejectedRange.status, 400);
 
-  assert.equal(calls.dbReads, 4);
+  assert.deepEqual(result.assessment, { total: 25, notPiloted: 25, groups: [{ pilot_status: 'not_piloted', count: 25 }] });
+  assert.equal(calls.dbReads, 5);
   assert.equal(calls.dbWrites, 0);
   assert.equal(calls.ai, 0);
   assert.equal(calls.kvWrites, 0);
@@ -206,9 +207,9 @@ test("Preview source registry diagnostics confirm the staged primary NDS corpus 
     { source_id: "owner-supplied-nds-multifractal-2019", source_document_id: null, title: "2019 Multifractal Supplement", authority_tier: "unverified_supplement", page_count: 8, imported_pages: 8, text_chunks: 8, visual_chunks: 0 }
   ];
   const flagGroups = [
-    { severity: "critical", status: "open", count: 2 },
+    { severity: "critical", status: "open", count: 8 },
     { severity: "high", status: "open", count: 17 },
-    { severity: "medium", status: "open", count: 4 }
+    { severity: "medium", status: "open", count: 3 }
   ];
   const moduleGroups = [
     { status: "source_mapped", count: 9 },
@@ -217,7 +218,7 @@ test("Preview source registry diagnostics confirm the staged primary NDS corpus 
     { status: "source_mapped_with_conflicts", count: 1 }
   ];
   const candidateSummary = [
-    { total: 10, unapproved: 10, execution_ineligible: 10 }
+    { total: 16, unapproved: 16, execution_ineligible: 16 }
   ];
   const env = {
     DB: {
@@ -228,7 +229,8 @@ test("Preview source registry diagnostics confirm the staged primary NDS corpus 
             if (sql.includes("FROM gs_source_documents")) return { results: docs };
             if (sql.includes("FROM gs_source_review_flags")) return { results: flagGroups };
             if (sql.includes("FROM gs_nds_curriculum_modules")) return { results: moduleGroups };
-            if (sql.includes("FROM gs_nds_rule_candidates")) return { results: candidateSummary };
+            if (sql.includes("FROM gs_nds_rule_candidates")) return { results: [{ total: 16, unapproved: 16, execution_ineligible: 16 }] };
+            if (sql.includes("FROM gs_nds_assessment_items")) return { results: [{ pilot_status: "not_piloted", count: 25 }] };
             throw new Error("Unexpected query");
           },
           async run() { calls.dbWrites++; return { success: true }; }
@@ -252,9 +254,9 @@ test("Preview source registry diagnostics confirm the staged primary NDS corpus 
   assert.equal(result.primaryAuthorDocuments, 5);
   assert.equal(result.ownerSuppliedQuarantinedDocuments, 1);
   assert.deepEqual(result.pageTotals, { pages: 202, imported: 202, text: 190, visual: 12 });
-  assert.equal(result.reviewFlags.total, 23);
+  assert.equal(result.reviewFlags.total, 28);
   assert.equal(result.curriculum.total, 12);
-  assert.deepEqual(result.ruleCandidates, { total: 10, unapproved: 10, executionIneligible: 10 });
+  assert.deepEqual(result.ruleCandidates, { total: 16, unapproved: 16, executionIneligible: 16 });
   assert.equal(calls.dbReads, 4);
   assert.equal(calls.dbWrites, 0);
   assert.equal(calls.ai, 0);
