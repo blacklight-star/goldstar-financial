@@ -113,3 +113,17 @@ TG.ME provides indexed post identifiers and caption metadata for FuzzyLogic_NDS,
 - Telegram: NDS4ALLVIDEOS returned 20 posts; the other three configured channels returned zero parsed posts in the last strict run.
 - No AI call, KV/D1 write, training, approval, Cron change, active deployment, or Production change was performed by the source-catalog correction.
 - L1 remains the final approval authority; L2 verifies evidence; Trainer only extracts and signs candidate evidence.
+
+
+## Staged first-party PDF intake (2026-11-09)
+
+The owner-supplied PDF files were imported into the isolated `goldstar_nds_staging` D1 registry. This supersedes the earlier “manual PDF import pending” status above.
+
+- Five documents matched the author-linked Academia catalog by document ID/title/author and were SHA-256 verified: English NDS Strategy (44 pages), NDS Farsi (125 pages), NDS New Approach (12 pages), Advanced Quantitative Trading (7 pages), and Advanced Money Management (6 pages).
+- One additional 2019 Multifractal PDF was registered separately as owner-supplied with publication-platform provenance unverified; it is quarantined and is **not** attributed to Academia.
+- Intake contains 202 page records: 190 text pages and 12 visual-only pages. The 12 visual-only pages were inspected as images; OCR was not run. Each text page has its own SHA-256 hash and page reference.
+- Six source records and sixteen technical/provenance review flags were registered. All chunks remain `not_rule_validated`; no trading rule was approved or promoted.
+- The Farsi source's page 2 risk disclaimer, including its author-attributed warning about cryptocurrency volatility, is preserved for the Risk curriculum and must not be recast as independent statistical proof.
+- The quantitative paper, money-management paper and 2019 multifractal supplement carry open reproducibility/formula flags. In particular, the 86% target expression and lot-sizing formula are not cleared for executable MT5 sizing.
+
+The Trainer exposes authenticated, read-only staging endpoints: `GET /admin/source-documents`, `GET /admin/source-pages?sourceId=...&from=...&to=...` (maximum 10 pages per request), and `GET /admin/source-review-flags`. They require the staging `GOLDSTAR_BRIDGE_SECRET`, perform SELECTs only, and must never invoke AI, write KV/D1, approve rules, or promote source content. These routes are candidate code only until Preview CI/runtime tests pass; no active Worker deployment or Cron activation is implied.
