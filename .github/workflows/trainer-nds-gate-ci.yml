@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BASE="https://5c787893-goldstar-trainer-staging.goldstar-nsl83.workers.dev"
+          BASE="https://66e1c8c4-goldstar-trainer-staging.goldstar-nsl83.workers.dev"
 
           health="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 "$BASE/health")"
           HEALTH="$health" node -e '
