@@ -11,7 +11,8 @@ function roundDownToStep(value, step) {
 /**
  * Pure, side-effect-free risk simulation.
  * It never submits, modifies, or closes an order.
- * All monetary broker costs and tick_value_loss must be expressed in account currency.
+ * Tick value and the total round-trip broker costs are expressed in profit currency;
+ * currencyConversionRate converts that amount to the account currency.
  */
 export function simulateRiskGate(policy, input) {
   const reject = (reason, extra = {}) => ({
@@ -48,6 +49,7 @@ export function simulateRiskGate(policy, input) {
 
   const riskPerTradePct = Number(policy.risk_per_trade_pct);
   if (!finitePositive(riskPerTradePct)) return reject("risk_per_trade_limit_not_configured", { drawdownPct });
+  if (riskPerTradePct >= Number(policy.max_drawdown_pct)) return reject("risk_per_trade_must_be_below_max_drawdown", { drawdownPct });
   if (!finitePositive(policy.daily_loss_limit_pct)) return reject("daily_loss_limit_not_configured", { drawdownPct });
   if (!finitePositive(policy.max_total_open_risk_pct)) return reject("max_total_open_risk_not_configured", { drawdownPct });
   if (!finitePositive(policy.max_correlated_exposure_pct)) return reject("correlated_exposure_limit_not_configured", { drawdownPct });
