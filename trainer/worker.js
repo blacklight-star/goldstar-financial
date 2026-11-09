@@ -1108,6 +1108,48 @@ export default {
         sources: ACADEMIA_PRIMARY_DOCUMENTS
       });
     }
+    if (url.pathname === "/__preview/source-registry-diagnostics" && request.method === "GET" &&
+        isAllowedPreviewHost(url)) {
+      if (!env.DB || typeof env.DB.prepare !== "function") {
+        return json({ ok: false, error: "Source registry D1 unavailable", dryRun: true, aiCalled: false, persisted: false }, 503);
+      }
+      try {
+        const [documents, flagGroups] = await Promise.all([
+          readAllD1(env.DB.prepare(
+            "SELECT d.source_id, d.source_document_id, d.title, d.source_origin_type, d.source_role, d.authority_tier, d.file_sha256, d.page_count, d.pages_with_text, d.status, d.technical_review_status, COUNT(c.chunk_id) AS imported_pages, SUM(CASE WHEN c.content_type = 'text' THEN 1 ELSE 0 END) AS text_chunks, SUM(CASE WHEN c.content_type = 'visual_only' THEN 1 ELSE 0 END) AS visual_chunks, SUM(c.content_chars) AS extracted_chars FROM gs_source_documents d LEFT JOIN gs_source_chunks c ON c.source_id = d.source_id GROUP BY d.source_id ORDER BY CASE d.authority_tier WHEN 'primary_author_source' THEN 0 ELSE 1 END, d.source_id"
+          )),
+          readAllD1(env.DB.prepare(
+            "SELECT severity, status, COUNT(*) AS count FROM gs_source_review_flags GROUP BY severity, status ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, status"
+          ))
+        ]);
+        const pageTotals = documents.reduce((total, item) => ({
+          pages: total.pages + Number(item.page_count || 0),
+          imported: total.imported + Number(item.imported_pages || 0),
+          text: total.text + Number(item.text_chunks || 0),
+          visual: total.visual + Number(item.visual_chunks || 0)
+        }), { pages: 0, imported: 0, text: 0, visual: 0 });
+        const flags = flagGroups.reduce((total, item) => total + Number(item.count || 0), 0);
+        const primaryDocs = documents.filter(item => item.authority_tier === "primary_author_source");
+        const allPagesPresent = documents.length === 6 && pageTotals.pages === pageTotals.imported;
+        const primaryCorePresent = primaryDocs.length === 5 &&
+          primaryDocs.some(item => item.source_document_id === "129627974") &&
+          primaryDocs.some(item => item.source_document_id === "129628090");
+        return json({
+          ok: allPagesPresent && primaryCorePresent && pageTotals.pages === 202 &&
+            pageTotals.text === 190 && pageTotals.visual === 12 && flags === 16,
+          dryRun: true, readOnly: true, persisted: false, aiCalled: false,
+          fetchedFromAcademia: false,
+          sourceStatus: "documents_ingested_to_staging; technical_validation_and_rule_approval_pending",
+          documents: documents.length, primaryAuthorDocuments: primaryDocs.length,
+          ownerSuppliedQuarantinedDocuments: documents.length - primaryDocs.length,
+          pageTotals, reviewFlags: { total: flags, groups: flagGroups },
+          sources: documents
+        });
+      } catch (_) {
+        return json({ ok: false, error: "Source registry diagnostics failed", dryRun: true, readOnly: true, persisted: false, aiCalled: false }, 502);
+      }
+    }
+
     if (url.pathname === "/__preview/tgme-archive-diagnostics" && request.method === "GET" &&
         isAllowedPreviewHost(url)) {
       const selected = TGME_ARCHIVE_POSTS.slice(0, 6);
