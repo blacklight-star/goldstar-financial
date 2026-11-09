@@ -29,7 +29,7 @@ jobs:
               const data = JSON.parse(process.env.RESPONSE);
               let ok = false;
               switch (process.env.CHECK_NAME) {
-                case "Financial L2 V36":
+                case "Financial L2 V37":
                   ok = data.status === "ok" && data.analysisEnabled === false;
                   break;
                 case "MQL5/MT5 V5":
@@ -61,8 +61,15 @@ jobs:
               console.log(process.env.CHECK_NAME + " preview health OK");
             '
           }
-          check_json "Financial L2 V36" "https://d0a64b20-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
+          check_json "Financial L2 V37" "https://4eed5ce2-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
           check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
           check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
           check_json "Goldstar CMC Staging" "https://goldstar-cmc-ingest-staging.goldstar-nsl83.workers.dev/health"
+
+          # V37 must fail closed when no dedicated L1 bridge credential is supplied.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/risk-policy-unauth.json -w '%{http_code}' "https://4eed5ce2-goldstar-financial-v3.goldstar-nsl83.workers.dev/risk/policy")"
+          test "$status" = "403"
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/risk-sim-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"currentEquity":1000}' "https://4eed5ce2-goldstar-financial-v3.goldstar-nsl83.workers.dev/risk/simulate")"
+          test "$status" = "403"
+          echo "Financial L2 V37 risk routes reject unauthenticated access (403); no order was submitted."
