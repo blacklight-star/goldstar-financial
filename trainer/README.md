@@ -137,3 +137,11 @@ The Trainer exposes authenticated, read-only staging endpoints: `GET /admin/sour
 - The author-published Farsi material contains a specific warning against cryptocurrency trading because of volatility. This remains attributed to the author and is not presented as independent statistical evidence.
 - The English source contains conflicting wording/diagram context for Rule 2 on page 41, and differing timeframe examples across English/Farsi sections. These are blocked for clarification rather than silently normalized.
 - No AI calls, Knowledge KV writes, approvals, automatic training, scheduled execution or Production deployment were performed by this intake/curriculum step.
+
+
+### NDS assessment draft bank (2026-11-09)
+
+- Twenty-five Persian multiple-choice items have been drafted and linked to exact source page hashes across the 12-module curriculum.
+- Each item has four options, one keyed answer and a source-grounded explanation. Content review remains pending; no psychometric validation or learner pilot has occurred.
+- Difficulty labels are editorial estimates only. Discrimination indices, item facility and reliability are not available until a controlled pilot has been completed.
+- Items that would teach an unsupported profit guarantee, the disputed 1:10 risk/reward interpretation, or the unqualified 0.4-lot example have been excluded from the scored bank.
