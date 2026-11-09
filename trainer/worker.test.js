@@ -207,8 +207,17 @@ test("Preview source registry diagnostics confirm the staged primary NDS corpus 
   ];
   const flagGroups = [
     { severity: "critical", status: "open", count: 2 },
-    { severity: "high", status: "open", count: 10 },
+    { severity: "high", status: "open", count: 17 },
     { severity: "medium", status: "open", count: 4 }
+  ];
+  const moduleGroups = [
+    { status: "source_mapped", count: 9 },
+    { status: "source_mapped_risk_gate", count: 1 },
+    { status: "source_mapped_validation_required", count: 1 },
+    { status: "source_mapped_with_conflicts", count: 1 }
+  ];
+  const candidateSummary = [
+    { total: 10, unapproved: 10, execution_ineligible: 10 }
   ];
   const env = {
     DB: {
@@ -218,6 +227,8 @@ test("Preview source registry diagnostics confirm the staged primary NDS corpus 
             calls.dbReads++;
             if (sql.includes("FROM gs_source_documents")) return { results: docs };
             if (sql.includes("FROM gs_source_review_flags")) return { results: flagGroups };
+            if (sql.includes("FROM gs_nds_curriculum_modules")) return { results: moduleGroups };
+            if (sql.includes("FROM gs_nds_rule_candidates")) return { results: candidateSummary };
             throw new Error("Unexpected query");
           },
           async run() { calls.dbWrites++; return { success: true }; }
@@ -241,8 +252,10 @@ test("Preview source registry diagnostics confirm the staged primary NDS corpus 
   assert.equal(result.primaryAuthorDocuments, 5);
   assert.equal(result.ownerSuppliedQuarantinedDocuments, 1);
   assert.deepEqual(result.pageTotals, { pages: 202, imported: 202, text: 190, visual: 12 });
-  assert.equal(result.reviewFlags.total, 16);
-  assert.equal(calls.dbReads, 2);
+  assert.equal(result.reviewFlags.total, 23);
+  assert.equal(result.curriculum.total, 12);
+  assert.deepEqual(result.ruleCandidates, { total: 10, unapproved: 10, executionIneligible: 10 });
+  assert.equal(calls.dbReads, 4);
   assert.equal(calls.dbWrites, 0);
   assert.equal(calls.ai, 0);
   assert.equal(calls.kvWrites, 0);
