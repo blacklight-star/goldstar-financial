@@ -107,8 +107,12 @@ test("rejects generic ICT vocabulary padded with NDS-like words", () => {
   assert.equal(isNdsRelevantText(long("Liquidity and order blocks are discussed with Nodes, Flags, Rally, Sequence and Fractal terms, but no structural NDS relationship is described.")), false);
 });
 
-test("accepts Persian NDS terminology", () => {
-  assert.equal(isNdsRelevantText(long("در استراتژی NDS، هوک، رالی، فلگ، سکانس، گره و تقارن اجزای ساختار چرخه هستند.")), true);
+test("accepts Persian NDS terminology when structural relationships are explicit", () => {
+  assert.equal(isNdsRelevantText(long("در استراتژی NDS، هوک پس از تشکیل گره‌ها می‌آید؛ سپس رالی شکل می‌گیرد و در پایان فلگ چرخه را می‌بندد.")), true);
+});
+
+test("rejects software architecture text that borrows NDS component vocabulary", () => {
+  assert.equal(isNdsRelevantText(long("The NDS strategy for software architecture describes components and structure. Nodes, hooks, flags, rally, sequence, cycles, fractals and symmetry are used as names for graph components, event callbacks, state flags and repeated test runs.")), false);
 });
 
 test("does not reject an NDS post merely because it also mentions ICT terms", () => {
