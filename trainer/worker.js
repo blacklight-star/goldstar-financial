@@ -1114,12 +1114,18 @@ export default {
         return json({ ok: false, error: "Source registry D1 unavailable", dryRun: true, aiCalled: false, persisted: false }, 503);
       }
       try {
-        const [documents, flagGroups] = await Promise.all([
+        const [documents, flagGroups, moduleGroups, candidateRows] = await Promise.all([
           readAllD1(env.DB.prepare(
             "SELECT d.source_id, d.source_document_id, d.title, d.source_origin_type, d.source_role, d.authority_tier, d.file_sha256, d.page_count, d.pages_with_text, d.status, d.technical_review_status, COUNT(c.chunk_id) AS imported_pages, SUM(CASE WHEN c.content_type = 'text' THEN 1 ELSE 0 END) AS text_chunks, SUM(CASE WHEN c.content_type = 'visual_only' THEN 1 ELSE 0 END) AS visual_chunks, SUM(c.content_chars) AS extracted_chars FROM gs_source_documents d LEFT JOIN gs_source_chunks c ON c.source_id = d.source_id GROUP BY d.source_id ORDER BY CASE d.authority_tier WHEN 'primary_author_source' THEN 0 ELSE 1 END, d.source_id"
           )),
           readAllD1(env.DB.prepare(
             "SELECT severity, status, COUNT(*) AS count FROM gs_source_review_flags GROUP BY severity, status ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, status"
+          )),
+          readAllD1(env.DB.prepare(
+            "SELECT status, COUNT(*) AS count FROM gs_nds_curriculum_modules GROUP BY status ORDER BY status"
+          )),
+          readAllD1(env.DB.prepare(
+            "SELECT COUNT(*) AS total, SUM(CASE WHEN approval_status = 'not_approved' THEN 1 ELSE 0 END) AS unapproved, SUM(CASE WHEN execution_eligible = 0 THEN 1 ELSE 0 END) AS execution_ineligible FROM gs_nds_rule_candidates"
           ))
         ]);
         const pageTotals = documents.reduce((total, item) => ({
@@ -1129,6 +1135,11 @@ export default {
           visual: total.visual + Number(item.visual_chunks || 0)
         }), { pages: 0, imported: 0, text: 0, visual: 0 });
         const flags = flagGroups.reduce((total, item) => total + Number(item.count || 0), 0);
+        const curriculumModules = moduleGroups.reduce((total, item) => total + Number(item.count || 0), 0);
+        const candidateSummary = candidateRows[0] || {};
+        const ruleCandidates = Number(candidateSummary.total || 0);
+        const unapprovedCandidates = Number(candidateSummary.unapproved || 0);
+        const executionIneligibleCandidates = Number(candidateSummary.execution_ineligible || 0);
         const primaryDocs = documents.filter(item => item.authority_tier === "primary_author_source");
         const allPagesPresent = documents.length === 6 && pageTotals.pages === pageTotals.imported;
         const primaryCorePresent = primaryDocs.length === 5 &&
@@ -1136,13 +1147,20 @@ export default {
           primaryDocs.some(item => item.source_document_id === "129628090");
         return json({
           ok: allPagesPresent && primaryCorePresent && pageTotals.pages === 202 &&
-            pageTotals.text === 190 && pageTotals.visual === 12 && flags === 16,
+            pageTotals.text === 190 && pageTotals.visual === 12 && flags === 23 &&
+            curriculumModules === 12 && ruleCandidates === 10 &&
+            unapprovedCandidates === 10 && executionIneligibleCandidates === 10,
           dryRun: true, readOnly: true, persisted: false, aiCalled: false,
           fetchedFromAcademia: false,
-          sourceStatus: "documents_ingested_to_staging; technical_validation_and_rule_approval_pending",
+          sourceStatus: "documents_ingested_to_staging; curriculum_mapped; rule_candidates_not_approved_or_executable",
           documents: documents.length, primaryAuthorDocuments: primaryDocs.length,
           ownerSuppliedQuarantinedDocuments: documents.length - primaryDocs.length,
           pageTotals, reviewFlags: { total: flags, groups: flagGroups },
+          curriculum: { total: curriculumModules, groups: moduleGroups },
+          ruleCandidates: {
+            total: ruleCandidates, unapproved: unapprovedCandidates,
+            executionIneligible: executionIneligibleCandidates
+          },
           sources: documents
         });
       } catch (_) {
