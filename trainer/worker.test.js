@@ -12,6 +12,57 @@ test("health reports staging scheduler paused", async () => {
   assert.equal(body.scheduler, "paused; no Cron triggers configured");
 });
 
+test("admin routes reject missing or incorrect bridge credentials without side effects", async () => {
+  const calls = { reads: 0, writes: 0, ai: 0 };
+  const env = {
+    KNOWLEDGE: {
+      async get() { calls.reads++; return null; },
+      async put() { calls.writes++; }
+    },
+    AI: { async run() { calls.ai++; throw new Error("AI must not be called by rejected admin requests"); } }
+  };
+  const routes = [
+    { path: "/admin/diagnostics", method: "POST" },
+    { path: "/admin/status", method: "GET" },
+    { path: "/admin/run-once", method: "POST" }
+  ];
+  for (const route of routes) {
+    const missing = await worker.fetch(new Request("https://trainer.example" + route.path, { method: route.method }), env);
+    assert.equal(missing.status, 401, route.path + " must reject a missing bridge secret");
+
+    const incorrect = await worker.fetch(new Request("https://trainer.example" + route.path, {
+      method: route.method,
+      headers: { authorization: "Bearer incorrect-test-secret" }
+    }), { ...env, GOLDSTAR_BRIDGE_SECRET: "correct-test-secret" });
+    assert.equal(incorrect.status, 401, route.path + " must reject an incorrect bridge secret");
+  }
+  assert.deepEqual(calls, { reads: 0, writes: 0, ai: 0 });
+});
+
+test("authenticated admin diagnostics are read-only and do not invoke AI", async () => {
+  const calls = { reads: 0, writes: 0, ai: 0 };
+  const secret = "unit-test-trainer-bridge-secret";
+  const env = {
+    GOLDSTAR_BRIDGE_SECRET: secret,
+    KNOWLEDGE: {
+      async get() { calls.reads++; return null; },
+      async put() { calls.writes++; }
+    },
+    AI: { async run() { calls.ai++; throw new Error("diagnostics must not invoke AI"); } }
+  };
+  const response = await worker.fetch(new Request("https://trainer.example/admin/diagnostics", {
+    method: "POST",
+    headers: { authorization: "Bearer " + secret }
+  }), env);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(result.checks.auth, true);
+  assert.equal(result.checks.kv.ok, true);
+  assert.equal(result.note, "Read-only diagnostics. No training run was started.");
+  assert.deepEqual(calls, { reads: 1, writes: 0, ai: 0 });
+});
+
 const long = (text) => text + " This extended explanation contains enough context to exceed the minimum source-text threshold and represents a complete public post rather than a short title.";
 
 test("rejects generic ICT/SMC vocabulary without NDS structure", () => {
