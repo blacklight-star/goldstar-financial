@@ -1069,3 +1069,101 @@ test("TG.ME metadata-only archive posts remain ineligible until lesson media or 
   assert.equal(result.approvalEligibleCount, 0);
   assert.equal(result.rules[0].approvalEligible, false);
 });
+
+test("risk policy endpoint is read-only and L1 bridge-only", async () => {
+  const reads = [];
+  let writes = 0;
+  const policy = {
+    policy_id: "GS-RISK-DEMO", version: 1, environment: "DEMO_ONLY",
+    account_currency: "USD", starting_equity: 1000, max_drawdown_pct: 5,
+    risk_per_trade_pct: null, daily_loss_limit_pct: null,
+    max_total_open_risk_pct: null, max_correlated_exposure_pct: null,
+    max_positions: null, order_execution_enabled: 0, live_trading_enabled: 0,
+    status: "draft_staging_owner_review_required"
+  };
+  const state = makeEnv();
+  state.env.MARKET_DB = {
+    prepare(sql) {
+      return {
+        async first() { reads.push(sql); return policy; },
+        async run() { writes++; return { success: true }; }
+      };
+    }
+  };
+  const unauthorized = await worker.fetch(makeRequest("/risk/policy", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(unauthorized.status, 403);
+
+  const response = await worker.fetch(makeRequest("/risk/policy", undefined, {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.available, true);
+  assert.equal(result.executionEnabled, false);
+  assert.equal(result.liveTradingEnabled, false);
+  assert.equal(result.policy.max_drawdown_pct, 5);
+  assert.equal(result.policy.risk_per_trade_pct, null);
+  assert.equal(reads.length, 1);
+  assert.equal(writes, 0);
+});
+
+test("risk simulation rejects unconfigured risk budgets and never reaches an order API", async () => {
+  let reads = 0;
+  let writes = 0;
+  const policy = {
+    policy_id: "GS-RISK-DEMO", version: 1, environment: "DEMO_ONLY",
+    account_currency: "USD", starting_equity: 1000, max_drawdown_pct: 5,
+    risk_per_trade_pct: null, daily_loss_limit_pct: null,
+    max_total_open_risk_pct: null, max_correlated_exposure_pct: null,
+    max_positions: null, order_execution_enabled: 0, live_trading_enabled: 0,
+    status: "draft_staging_owner_review_required"
+  };
+  const state = makeEnv();
+  state.env.MARKET_DB = {
+    prepare(sql) {
+      return {
+        async first() { reads++; return policy; },
+        async run() { writes++; return { success: true }; }
+      };
+    }
+  };
+  const input = {
+    side: "BUY", entryPrice: 1.1, stopLoss: 1.095,
+    currentEquity: 1000, highWaterMark: 1000,
+    currentDailyLossPct: 0, currentOpenRiskPct: 0,
+    currentCorrelatedExposurePct: 0, currentOpenPositions: 0,
+    tickSize: 0.0001, tickValueLoss: 10, volumeMin: 0.01,
+    volumeMax: 100, volumeStep: 0.01, commissionPerLot: 2,
+    spreadCostPerLot: 1, slippageCostPerLot: 1, currencyConversionRate: 1
+  };
+  const unauthorized = await worker.fetch(makeRequest("/risk/simulate", input, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(unauthorized.status, 403);
+  assert.equal(reads, 0);
+
+  const response = await worker.fetch(makeRequest("/risk/simulate", input, {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 409);
+  const result = await response.json();
+  assert.equal(result.ok, false);
+  assert.equal(result.executionEligible, false);
+  assert.equal(result.orderSubmitted, false);
+  assert.ok(result.reasons.includes("risk_per_trade_limit_not_configured"));
+  assert.equal(result.executionEnabled, false);
+  assert.equal(reads, 1);
+  assert.equal(writes, 0);
+  assert.equal(state.env.AI.calls, 0);
+});
+
+test("risk endpoints fail closed when the dedicated market database is unavailable", async () => {
+  const state = makeEnv({ withMarketDb: false, withDb: true });
+  const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
+  const policy = await worker.fetch(makeRequest("/risk/policy", undefined, headers), state.env, ctx);
+  const simulate = await worker.fetch(makeRequest("/risk/simulate", { currentEquity: 1000 }, headers), state.env, ctx);
+  assert.equal(policy.status, 503);
+  assert.equal(simulate.status, 503);
+});
