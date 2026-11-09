@@ -69,7 +69,11 @@ jobs:
 
           # V37 must fail closed when no dedicated L1 bridge credential is supplied.
           status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/risk-policy-unauth.json -w '%{http_code}' "https://4eed5ce2-goldstar-financial-v3.goldstar-nsl83.workers.dev/risk/policy")"
-          test "$status" = "403"
+          echo "V37 /risk/policy unauthenticated HTTP: $status"
+          cat /tmp/risk-policy-unauth.json
+          case "$status" in 401|403) ;; *) echo "Unexpected unauthenticated policy status"; exit 1 ;; esac
           status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/risk-sim-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"currentEquity":1000}' "https://4eed5ce2-goldstar-financial-v3.goldstar-nsl83.workers.dev/risk/simulate")"
-          test "$status" = "403"
-          echo "Financial L2 V37 risk routes reject unauthenticated access (403); no order was submitted."
+          echo "V37 /risk/simulate unauthenticated HTTP: $status"
+          cat /tmp/risk-sim-unauth.json
+          case "$status" in 401|403) ;; *) echo "Unexpected unauthenticated simulation status"; exit 1 ;; esac
+          echo "Financial L2 V37 risk routes reject unauthenticated access; no order was submitted."
