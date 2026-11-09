@@ -63,6 +63,138 @@ test("authenticated admin diagnostics are read-only and do not invoke AI", async
   assert.deepEqual(calls, { reads: 1, writes: 0, ai: 0 });
 });
 
+
+test("NDS source registry endpoints reject missing and incorrect bridge credentials before D1 access", async () => {
+  const calls = { db: 0, ai: 0, kvWrites: 0 };
+  const env = {
+    GOLDSTAR_BRIDGE_SECRET: "correct-source-registry-secret",
+    DB: { prepare() { calls.db++; throw new Error("unauthorized request reached D1"); } },
+    KNOWLEDGE: { async get() { return null; }, async put() { calls.kvWrites++; } },
+    AI: { async run() { calls.ai++; } }
+  };
+  const routes = [
+    "/admin/source-documents",
+    "/admin/source-pages?sourceId=academia-nds-farsi&from=1&to=2",
+    "/admin/source-review-flags"
+  ];
+  for (const path of routes) {
+    const missing = await worker.fetch(new Request("https://trainer.example" + path), env);
+    assert.equal(missing.status, 401, path + " must reject missing credentials");
+    const incorrect = await worker.fetch(new Request("https://trainer.example" + path, {
+      headers: { authorization: "Bearer wrong-secret" }
+    }), env);
+    assert.equal(incorrect.status, 401, path + " must reject incorrect credentials");
+  }
+  assert.deepEqual(calls, { db: 0, ai: 0, kvWrites: 0 });
+});
+
+test("NDS source registry admin reads are bounded, authenticated, and side-effect free", async () => {
+  const calls = { dbReads: 0, dbWrites: 0, ai: 0, kvWrites: 0 };
+  const secret = "unit-test-source-registry-secret";
+  const source = {
+    source_id: "academia-nds-farsi",
+    title: "NDS Farsi",
+    authority_tier: "primary_author_source",
+    status: "staging_ingested_quarantined",
+    technical_review_status: "core_methodology_validation_pending"
+  };
+  const pageRows = [
+    { source_id: source.source_id, page_number: 2, content_type: "text", content: "risk disclaimer", content_sha256: "a".repeat(64) },
+    { source_id: source.source_id, page_number: 3, content_type: "text", content: "introduction", content_sha256: "b".repeat(64) }
+  ];
+  const flagRows = [
+    { review_id: "NDS-FA-CRYPTO-001", source_id: source.source_id, severity: "medium", status: "open" }
+  ];
+  const db = {
+    prepare(sql) {
+      const query = {
+        params: [],
+        bind(...params) { this.params = params; return this; },
+        async all() {
+          calls.dbReads++;
+          if (sql.includes("FROM gs_source_documents")) {
+            if (sql.includes("WHERE source_id")) return { results: [source] };
+            return { results: [source] };
+          }
+          if (sql.includes("FROM gs_source_chunks")) return { results: pageRows };
+          if (sql.includes("FROM gs_source_review_flags")) return { results: flagRows };
+          throw new Error("Unexpected source registry query: " + sql);
+        },
+        async run() { calls.dbWrites++; return { success: true }; }
+      };
+      return query;
+    }
+  };
+  const env = {
+    GOLDSTAR_BRIDGE_SECRET: secret,
+    DB: db,
+    KNOWLEDGE: { async get() { return null; }, async put() { calls.kvWrites++; } },
+    AI: { async run() { calls.ai++; throw new Error("Source registry reads must not call AI"); } }
+  };
+  const headers = { authorization: "Bearer " + secret };
+
+  const docsResponse = await worker.fetch(new Request("https://trainer.example/admin/source-documents", { headers }), env);
+  assert.equal(docsResponse.status, 200);
+  const docs = await docsResponse.json();
+  assert.equal(docs.ok, true);
+  assert.equal(docs.readOnly, true);
+  assert.equal(docs.aiCalled, false);
+  assert.equal(docs.persisted, false);
+  assert.equal(docs.count, 1);
+  assert.equal(docs.documents[0].source_id, source.source_id);
+
+  const pagesResponse = await worker.fetch(new Request(
+    "https://trainer.example/admin/source-pages?sourceId=academia-nds-farsi&from=2&to=3", { headers }
+  ), env);
+  assert.equal(pagesResponse.status, 200);
+  const pages = await pagesResponse.json();
+  assert.equal(pages.readOnly, true);
+  assert.deepEqual(pages.pages.map(page => page.page_number), [2, 3]);
+  assert.equal(pages.pages[0].content, "risk disclaimer");
+
+  const flagsResponse = await worker.fetch(new Request(
+    "https://trainer.example/admin/source-review-flags?sourceId=academia-nds-farsi&limit=5", { headers }
+  ), env);
+  assert.equal(flagsResponse.status, 200);
+  const flags = await flagsResponse.json();
+  assert.equal(flags.readOnly, true);
+  assert.equal(flags.flags[0].review_id, "NDS-FA-CRYPTO-001");
+
+  const rejectedRange = await worker.fetch(new Request(
+    "https://trainer.example/admin/source-pages?sourceId=academia-nds-farsi&from=1&to=20", { headers }
+  ), env);
+  assert.equal(rejectedRange.status, 400);
+
+  assert.equal(calls.dbReads, 4);
+  assert.equal(calls.dbWrites, 0);
+  assert.equal(calls.ai, 0);
+  assert.equal(calls.kvWrites, 0);
+});
+
+test("NDS source page access rejects unknown documents before reading their chunks", async () => {
+  const queries = [];
+  const secret = "unit-test-source-registry-secret";
+  const env = {
+    GOLDSTAR_BRIDGE_SECRET: secret,
+    DB: {
+      prepare(sql) {
+        const query = { bind(...params) { query.params = params; return query; }, params: [], async all() {
+          queries.push({ sql, params: query.params });
+          return { results: [] };
+        } };
+        return query;
+      }
+    }
+  };
+  const response = await worker.fetch(new Request(
+    "https://trainer.example/admin/source-pages?sourceId=unknown-nds-source&from=1&to=1",
+    { headers: { authorization: "Bearer " + secret } }
+  ), env);
+  assert.equal(response.status, 404);
+  assert.equal(queries.length, 1);
+  assert.match(queries[0].sql, /FROM gs_source_documents/);
+});
+
 const long = (text) => text + " This extended explanation contains enough context to exceed the minimum source-text threshold and represents a complete public post rather than a short title.";
 
 test("rejects generic ICT/SMC vocabulary without NDS structure", () => {
