@@ -1154,7 +1154,7 @@ export default {
           primaryDocs.some(item => item.source_document_id === "129628090");
         return json({
           ok: allPagesPresent && primaryCorePresent && pageTotals.pages === 202 &&
-            pageTotals.text === 190 && pageTotals.visual === 12 && flags === 23 &&
+            pageTotals.text === 190 && pageTotals.visual === 12 && flags === 28 &&
             curriculumModules === 12 && ruleCandidates === 16 &&
             unapprovedCandidates === 16 && executionIneligibleCandidates === 16 &&
             assessmentItems === 25 && notPilotedAssessmentItems === 25,
