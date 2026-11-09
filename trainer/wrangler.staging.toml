@@ -16,4 +16,4 @@ database_name = "goldstar_nds_staging"
 database_id = "274a18a3-0d7e-402c-9ae8-904aa16cd0ff"
 
 [secrets]
-required = ["NDS_EVIDENCE_HMAC_KEY"]
+required = ["NDS_EVIDENCE_HMAC_KEY", "GOLDSTAR_BRIDGE_SECRET"]
