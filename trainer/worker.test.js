@@ -165,8 +165,7 @@ test("NDS source registry admin reads are bounded, authenticated, and side-effec
   ), env);
   assert.equal(rejectedRange.status, 400);
 
-  assert.deepEqual(result.assessment, { total: 25, notPiloted: 25, groups: [{ pilot_status: 'not_piloted', count: 25 }] });
-  assert.equal(calls.dbReads, 5);
+  assert.equal(calls.dbReads, 4);
   assert.equal(calls.dbWrites, 0);
   assert.equal(calls.ai, 0);
   assert.equal(calls.kvWrites, 0);
@@ -257,7 +256,8 @@ test("Preview source registry diagnostics confirm the staged primary NDS corpus 
   assert.equal(result.reviewFlags.total, 28);
   assert.equal(result.curriculum.total, 12);
   assert.deepEqual(result.ruleCandidates, { total: 16, unapproved: 16, executionIneligible: 16 });
-  assert.equal(calls.dbReads, 4);
+  assert.deepEqual(result.assessment, { total: 25, notPiloted: 25, groups: [{ pilot_status: "not_piloted", count: 25 }] });
+  assert.equal(calls.dbReads, 5);
   assert.equal(calls.dbWrites, 0);
   assert.equal(calls.ai, 0);
   assert.equal(calls.kvWrites, 0);
