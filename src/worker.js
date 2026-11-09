@@ -1,3 +1,4 @@
+import { simulateRiskGate } from "./risk.js";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -441,6 +442,59 @@ export default {
           return ok(upstreamData, upstream.status);
         } catch (gatewayError) {
           return err("MQL5 gateway request failed", 502);
+        }
+      }
+
+      if (path === "/risk/policy") {
+        if (method !== "GET") return err("Method not allowed", 405);
+        if (!validBridge) return err("L1 bridge authentication required", 403);
+        if (!env.MARKET_DB || typeof env.MARKET_DB.prepare !== "function") {
+          return err("Market research database unavailable", 503);
+        }
+        try {
+          var riskPolicy = await env.MARKET_DB.prepare(
+            "SELECT policy_id, version, environment, account_currency, starting_equity, max_drawdown_pct, risk_per_trade_pct, daily_loss_limit_pct, max_total_open_risk_pct, max_correlated_exposure_pct, max_positions, high_water_mark_method, lot_sizing_method, required_broker_fields_json, kill_switch_action, order_execution_enabled, live_trading_enabled, status, owner_approval_ref, effective_from FROM gs_risk_policy_versions ORDER BY version DESC LIMIT 1"
+          ).first();
+          if (!riskPolicy) return ok({ available: false, mode: "demo_only", executionEnabled: false });
+          return ok({
+            available: true,
+            mode: riskPolicy.environment,
+            policy: riskPolicy,
+            executionEnabled: false,
+            liveTradingEnabled: false,
+            note: "Read-only policy disclosure. This route cannot place, modify, or close orders."
+          });
+        } catch (_) {
+          return err("Risk policy lookup failed closed", 503);
+        }
+      }
+
+      if (path === "/risk/simulate") {
+        if (method !== "POST") return err("Method not allowed", 405);
+        if (!validBridge) return err("L1 bridge authentication required", 403);
+        if (!env.MARKET_DB || typeof env.MARKET_DB.prepare !== "function") {
+          return err("Market research database unavailable", 503);
+        }
+        var riskInput;
+        try { riskInput = await boundedJson(request, 4096); }
+        catch (inputError) { return err(inputError.message || "Invalid request", inputError.status || 400); }
+        try {
+          var activeRiskPolicy = await env.MARKET_DB.prepare(
+            "SELECT policy_id, version, environment, account_currency, starting_equity, max_drawdown_pct, risk_per_trade_pct, daily_loss_limit_pct, max_total_open_risk_pct, max_correlated_exposure_pct, max_positions, order_execution_enabled, live_trading_enabled, status FROM gs_risk_policy_versions ORDER BY version DESC LIMIT 1"
+          ).first();
+          if (!activeRiskPolicy) return err("Risk policy is not configured", 503);
+          var simulation = simulateRiskGate(activeRiskPolicy, riskInput);
+          return ok({
+            policyId: activeRiskPolicy.policy_id,
+            policyVersion: Number(activeRiskPolicy.version),
+            policyStatus: activeRiskPolicy.status,
+            ...simulation,
+            orderSubmitted: false,
+            executionEnabled: false,
+            timestamp: new Date().toISOString()
+          }, simulation.ok ? 200 : 409);
+        } catch (_) {
+          return err("Risk simulation failed closed", 503);
         }
       }
 
