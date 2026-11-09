@@ -122,8 +122,18 @@ The owner-supplied PDF files were imported into the isolated `goldstar_nds_stagi
 - Five documents matched the author-linked Academia catalog by document ID/title/author and were SHA-256 verified: English NDS Strategy (44 pages), NDS Farsi (125 pages), NDS New Approach (12 pages), Advanced Quantitative Trading (7 pages), and Advanced Money Management (6 pages).
 - One additional 2019 Multifractal PDF was registered separately as owner-supplied with publication-platform provenance unverified; it is quarantined and is **not** attributed to Academia.
 - Intake contains 202 page records: 190 text pages and 12 visual-only pages. The 12 visual-only pages were inspected as images; OCR was not run. Each text page has its own SHA-256 hash and page reference.
-- Six source records and sixteen technical/provenance review flags were registered. All chunks remain `not_rule_validated`; no trading rule was approved or promoted.
+- Six source records, 23 technical/provenance review flags, 12 curriculum modules and 10 page-linked rule/risk candidates were registered. All chunks remain `not_rule_validated`. The 10 rule/risk candidates are `not_approved` and `execution_eligible=0`; none was signed, approved, promoted or written to Knowledge KV.
 - The Farsi source's page 2 risk disclaimer, including its author-attributed warning about cryptocurrency volatility, is preserved for the Risk curriculum and must not be recast as independent statistical proof.
 - The quantitative paper, money-management paper and 2019 multifractal supplement carry open reproducibility/formula flags. In particular, the 86% target expression and lot-sizing formula are not cleared for executable MT5 sizing.
 
 The Trainer exposes authenticated, read-only staging endpoints: `GET /admin/source-documents`, `GET /admin/source-pages?sourceId=...&from=...&to=...` (maximum 10 pages per request), and `GET /admin/source-review-flags`. They require the staging `GOLDSTAR_BRIDGE_SECRET`, perform SELECTs only, and must never invoke AI, write KV/D1, approve rules, or promote source content. These routes are candidate code only until Preview CI/runtime tests pass; no active Worker deployment or Cron activation is implied.
+
+
+### Curriculum and rule-candidate staging (2026-11-09)
+
+- Twelve ordered NDS learning modules have been mapped to exact English/Farsi source pages, prerequisites, competency outcomes and assessment plans. The mapping follows the source's progression from terminology/Nodes and five pillars through cycles, Hooks, Rallies, Flags, Fractals, Symmetry, Sequencing, trading rules and risk/position sizing.
+- Ten source-linked rule/risk candidates have been entered with full page text, document and page SHA-256 references, source origin and extraction method. Every candidate remains unapproved and non-executable (execution_eligible=0).
+- Twenty-three review flags cover source conflicts, incomplete operational definitions, cryptocurrency risk caveat, stop/target units, node/pivot confirmation, 86.4% retracement anchors and position scaling risk.
+- The author-published Farsi material contains a specific warning against cryptocurrency trading because of volatility. This remains attributed to the author and is not presented as independent statistical evidence.
+- The English source contains conflicting wording/diagram context for Rule 2 on page 41, and differing timeframe examples across English/Farsi sections. These are blocked for clarification rather than silently normalized.
+- No AI calls, Knowledge KV writes, approvals, automatic training, scheduled execution or Production deployment were performed by this intake/curriculum step.
