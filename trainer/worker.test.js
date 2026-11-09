@@ -195,6 +195,78 @@ test("NDS source page access rejects unknown documents before reading their chun
   assert.match(queries[0].sql, /FROM gs_source_documents/);
 });
 
+test("Preview source registry diagnostics confirm the staged primary NDS corpus without side effects", async () => {
+  const calls = { dbReads: 0, dbWrites: 0, ai: 0, kvWrites: 0 };
+  const docs = [
+    { source_id: "academia-nds-strategy-english-v1", source_document_id: "129627974", title: "NDS Strategy English Version", authority_tier: "primary_author_source", page_count: 44, imported_pages: 44, text_chunks: 44, visual_chunks: 0 },
+    { source_id: "academia-nds-farsi", source_document_id: "129628090", title: "NDS Farsi", authority_tier: "primary_author_source", page_count: 125, imported_pages: 125, text_chunks: 114, visual_chunks: 11 },
+    { source_id: "academia-nds-new-approach", source_document_id: "122576333", title: "NDS New Approach", authority_tier: "primary_author_source", page_count: 12, imported_pages: 12, text_chunks: 11, visual_chunks: 1 },
+    { source_id: "academia-nds-ai-quant", source_document_id: "122832409", title: "Advanced Quantitative Trading", authority_tier: "primary_author_source", page_count: 7, imported_pages: 7, text_chunks: 7, visual_chunks: 0 },
+    { source_id: "academia-nds-money-management", source_document_id: "122966805", title: "Advanced Money Management", authority_tier: "primary_author_source", page_count: 6, imported_pages: 6, text_chunks: 6, visual_chunks: 0 },
+    { source_id: "owner-supplied-nds-multifractal-2019", source_document_id: null, title: "2019 Multifractal Supplement", authority_tier: "unverified_supplement", page_count: 8, imported_pages: 8, text_chunks: 8, visual_chunks: 0 }
+  ];
+  const flagGroups = [
+    { severity: "critical", status: "open", count: 2 },
+    { severity: "high", status: "open", count: 10 },
+    { severity: "medium", status: "open", count: 4 }
+  ];
+  const env = {
+    DB: {
+      prepare(sql) {
+        return {
+          async all() {
+            calls.dbReads++;
+            if (sql.includes("FROM gs_source_documents")) return { results: docs };
+            if (sql.includes("FROM gs_source_review_flags")) return { results: flagGroups };
+            throw new Error("Unexpected query");
+          },
+          async run() { calls.dbWrites++; return { success: true }; }
+        };
+      }
+    },
+    KNOWLEDGE: { async get() { return null; }, async put() { calls.kvWrites++; } },
+    AI: { async run() { calls.ai++; throw new Error("Diagnostics must not invoke AI"); } }
+  };
+  const response = await worker.fetch(new Request(
+    "https://deadbeef-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/source-registry-diagnostics"
+  ), env);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(result.readOnly, true);
+  assert.equal(result.persisted, false);
+  assert.equal(result.aiCalled, false);
+  assert.equal(result.fetchedFromAcademia, false);
+  assert.equal(result.documents, 6);
+  assert.equal(result.primaryAuthorDocuments, 5);
+  assert.equal(result.ownerSuppliedQuarantinedDocuments, 1);
+  assert.deepEqual(result.pageTotals, { pages: 202, imported: 202, text: 190, visual: 12 });
+  assert.equal(result.reviewFlags.total, 16);
+  assert.equal(calls.dbReads, 2);
+  assert.equal(calls.dbWrites, 0);
+  assert.equal(calls.ai, 0);
+  assert.equal(calls.kvWrites, 0);
+});
+
+test("Preview source registry diagnostics fail closed on missing chunks or wrong corpus totals", async () => {
+  const env = {
+    DB: {
+      prepare(sql) {
+        return { async all() {
+          if (sql.includes("FROM gs_source_documents")) return { results: [] };
+          return { results: [] };
+        } };
+      }
+    }
+  };
+  const response = await worker.fetch(new Request(
+    "https://deadbeef-goldstar-trainer-staging.goldstar-nsl83.workers.dev/__preview/source-registry-diagnostics"
+  ), env);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.ok, false);
+});
+
 const long = (text) => text + " This extended explanation contains enough context to exceed the minimum source-text threshold and represents a complete public post rather than a short title.";
 
 test("rejects generic ICT/SMC vocabulary without NDS structure", () => {
