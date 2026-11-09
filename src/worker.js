@@ -501,7 +501,7 @@ export default {
       if (path === "/") return ok({
         name: "Goldstar L2", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED, analysisMode: "disabled_until_verified_market_data",
         styles: ["ICT", "RTM", "NDS"],
-        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/market-data/status","/market-data/latest","/market-data/crypto/latest","/mql5/tools","/mql5/call","/mt5/status","/mt5/latest","/analyze"]
+        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/strategy/synthesize","/market-data/status","/market-data/latest","/market-data/crypto/latest","/mql5/tools","/mql5/call","/mt5/status","/mt5/latest","/risk/policy","/risk/simulate","/analyze"]
       });
 
       if (path === "/status") {
