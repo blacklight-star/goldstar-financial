@@ -159,23 +159,9 @@ export function isNdsRelevantText(value) {
   ];
   if (relationships.filter(Boolean).length >= 2) return true;
 
-  // Preserve compact methodology summaries when the source explicitly names NDS
-  // and describes a broad set of its structural components.
-  const namedMethod =
-    /\bnds\b[\s\S]{0,45}\b(?:strategy|method|system|framework)\b|\b(?:strategy|method|system|framework)\b[\s\S]{0,45}\bnds\b|استراتژی[\s\S]{0,45}\bnds\b|روش[\s\S]{0,45}\bnds\b/u.test(text);
-  const componentFamilies = [
-    /\bnodes?\b|گره|نود/u,
-    /\bhooks?\b|هوک/u,
-    /\brall(?:y|ies)?\b|رالی/u,
-    /\bflags?\b|فلگ|لیپ/u,
-    /\bsequenc(?:e|ing)\b|توالی|سکانس/u,
-    /\bcycles?\b|چرخه|سایکل/u,
-    /\bfractals?\b|فراکتال/u,
-    /\bsymmetry\b|تقارن/u
-  ];
-  const componentCount = componentFamilies.filter(pattern => pattern.test(text)).length;
-  const structuralDescription = /\b(?:components?|elements?|structure|structural|building blocks)\b|اجزا|عناصر|ساختار|مولفه/u.test(text);
-  return namedMethod && componentCount >= 5 && structuralDescription;
+  // Ambiguous keyword co-occurrence is not sufficient evidence of NDS.
+  // Unmatched content remains deferred for review rather than being promoted by a broad vocabulary fallback.
+  return false;
 }
 
 // Immutable Preview URLs are version-specific; aliases are not DNS routes.
