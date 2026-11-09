@@ -1,9 +1,16 @@
 const CHANNELS = [
-  { url: "https://t.me/s/NDS4ALLVIDEOS", name: "NDS4ALLVIDEOS" },
-  { url: "https://t.me/s/fuzzylogic_nds", name: "FuzzyLogic_NDS" },
-  { url: "https://t.me/s/BNJ1I", name: "BNJ1I" },
-  { url: "https://t.me/s/cottagends", name: "cottagends" }
+  { url: "https://t.me/s/NDS4ALLVIDEOS", name: "NDS4ALLVIDEOS", sourceOriginType: "third_party_video_archive" },
+  { url: "https://t.me/s/fuzzylogic_nds", name: "FuzzyLogic_NDS", sourceOriginType: "official_telegram_channel" },
+  { url: "https://t.me/s/BNJ1I", name: "BNJ1I", sourceOriginType: "third_party_course_aggregator" },
+  { url: "https://t.me/s/cottagends", name: "cottagends", sourceOriginType: "community_repost_channel" }
 ];
+
+export function sourceOriginTypeForChannel(name) {
+  const channel = CHANNELS.find(item => item.name === String(name || ""));
+  return channel && typeof channel.sourceOriginType === "string"
+    ? channel.sourceOriginType
+    : "unverified_telegram_source";
+}
 const ACADEMIA_PRIMARY_DOCUMENTS = [
   {
     documentId: "129627974",
@@ -98,7 +105,7 @@ const TGME_ARCHIVE_POSTS = [
 const INGESTION_SOURCES = CHANNELS.map(channel => ({
   ...channel,
   sourceType: "telegram",
-  sourceOriginType: "official_telegram_channel",
+  sourceOriginType: sourceOriginTypeForChannel(channel.name),
   sourceCaptureMethod: "telegram_public_post_html"
 }));
 const DIAGNOSTIC_CHANNELS = [
@@ -475,7 +482,7 @@ function parseTelegramPosts(html, channel) {
       sourcePostId, sourcePostKey: postKey, sourcePostUrl: "https://t.me/s/" + postKey,
       text: postText, links: uniqueLinks, youtubeLinks, videoUrls: uniqueVideoUrls,
       sourceCaptureMethod: "telegram_public_post_html",
-      sourceOriginType: "official_telegram_channel"
+      sourceOriginType: sourceOriginTypeForChannel(channel && channel.name)
     });
   }
   return posts;
@@ -898,7 +905,7 @@ async function runScheduledTraining(env) {
             sourceExcerptVerified: true,
             sourcePostContentHash: await sha256Hex(post.text),
             sourceCaptureMethod: post.sourceCaptureMethod || channel.sourceCaptureMethod || "telegram_public_post_html",
-            sourceOriginType: post.sourceOriginType || channel.sourceOriginType || "official_telegram_channel",
+            sourceOriginType: post.sourceOriginType || channel.sourceOriginType || sourceOriginTypeForChannel(channel.name),
             collectedAt: new Date().toISOString(),
             validationStatus: "pending"
           };
@@ -1035,6 +1042,7 @@ export default {
           const page = await readChannel(env, channel);
           return {
             channel: channel.name,
+            sourceOriginType: sourceOriginTypeForChannel(channel.name),
             sourceRole: channel.diagnosticOnly ? "diagnostic_only" : "configured_source",
             success: page.hasPosts,
             retrievalStatus: page.hasPosts ? "posts_extracted" : "no_posts_extracted",
@@ -1046,6 +1054,7 @@ export default {
         } catch (error) {
           return {
             channel: channel.name,
+            sourceOriginType: sourceOriginTypeForChannel(channel.name),
             sourceRole: channel.diagnosticOnly ? "diagnostic_only" : "configured_source",
             success: false,
             retrievalStatus: "fetch_error",
