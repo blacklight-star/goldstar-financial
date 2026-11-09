@@ -1167,3 +1167,44 @@ test("risk endpoints fail closed when the dedicated market database is unavailab
   assert.equal(policy.status, 503);
   assert.equal(simulate.status, 503);
 });
+
+test("risk simulation may report a demo-only estimate when every risk limit is configured but can never execute it", async () => {
+  let writes = 0;
+  const policy = {
+    policy_id: "GS-RISK-DEMO", version: 2, environment: "DEMO_ONLY",
+    account_currency: "USD", starting_equity: 1000, max_drawdown_pct: 5,
+    risk_per_trade_pct: 1, daily_loss_limit_pct: 2,
+    max_total_open_risk_pct: 3, max_correlated_exposure_pct: 4,
+    max_positions: 3, order_execution_enabled: 0, live_trading_enabled: 0,
+    status: "draft_staging_owner_review_required"
+  };
+  const state = makeEnv();
+  state.env.MARKET_DB = {
+    prepare() {
+      return {
+        async first() { return policy; },
+        async run() { writes++; return { success: true }; }
+      };
+    }
+  };
+  const input = {
+    side: "BUY", entryPrice: 1.1, stopLoss: 1.095,
+    currentEquity: 10000, highWaterMark: 10000,
+    currentDailyLossPct: 0, currentOpenRiskPct: 0,
+    currentCorrelatedExposurePct: 0, currentOpenPositions: 0,
+    tickSize: 0.0001, tickValueLoss: 10, volumeMin: 0.01,
+    volumeMax: 100, volumeStep: 0.01, commissionPerLot: 2,
+    spreadCostPerLot: 1, slippageCostPerLot: 1, currencyConversionRate: 1
+  };
+  const response = await worker.fetch(makeRequest("/risk/simulate", input, {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.decision, "simulation_only_not_executable");
+  assert.ok(result.calculatedVolume > 0);
+  assert.equal(result.orderSubmitted, false);
+  assert.equal(result.executionEligible, false);
+  assert.equal(result.executionEnabled, false);
+  assert.equal(writes, 0);
+});
