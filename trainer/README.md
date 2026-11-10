@@ -2,11 +2,21 @@
 
 This folder contains the source-controlled Trainer mirror derived from the Staging Worker and its immutable Preview candidates.
 
+## Current verified state (2026-11-10)
+
+- PR #5 head: `ce0af1b8096ea74677c3c915b1e430c8c76e20f7` (Draft, unmerged). Trainer Staging Candidate V31 is Preview-only; its source-code commit is `c75cdb42bfeaecc6978bb807cc05ddcf0265359f`. The PR head is one workflow-only commit later; the Worker source and tests are unchanged between those commits.
+- Trainer Staging active deployment remains V9; the latest V31 candidate has not been deployed. Cloudflare Staging Cron is empty.
+- The latest PR5 workflow's immutable Trainer target is V31 and its HMAC check targets Financial L2 V36. Financial L2 V37 is a separate newer PR4 candidate; neither candidate is Production.
+- Provenance is conservative: only FuzzyLogic_NDS is classified `official_telegram_channel`, based on the owner's confirmation that it is managed by Dr. Iraj Jafarian. NDS4ALLVIDEOS, BNJ1I and cottagends remain `unverified_telegram_source` until independent evidence establishes their origin. TG.ME is a third-party archive/metadata source, not an official channel.
+- The current fix branch `fix/nds-provenance-classifier-20261110` is isolated and not deployed. Its classifier rejects NDS-acronym-only and generic software/market vocabulary; ambiguous posts remain deferred. The branch has no PR and no Actions run.
+- The dated V17–V27 sections below are historical validation records, not the current candidate state.
+
+
 ## NDS retrieval gate
 
 - The retrieval filter requires at least 120 characters.
-- It accepts explicit NDS anchors (the full methodology name, 123Flag, or the distinctive Hook-Hook-Rally sequence).
-- Without an explicit anchor, it requires at least two distinct, sentence-local NDS structural relationships (for example Hook↔Node, Hook→Rally, Rally→Flag, Flag↔Lip, or Node hierarchy/priority).
+- It accepts a distinctive NDS pattern (123Flag or the Hook-Hook-Rally sequence), or the full methodology name together with at least two distinct, sentence-local structural relationships.
+- The NDS acronym alone, generic market/software vocabulary, and relationship pairs without the full methodology name or a distinctive NDS pattern are rejected; ambiguous material remains deferred.
 - Mere co-occurrence of generic terms such as nodes, flags, rally, sequence, fractal, or symmetry is rejected.
 - Persian text is Unicode-normalized before relationship evaluation.
 - This remains a retrieval prefilter; it does not establish correctness, source authority, validation, approval, or promotion.
@@ -14,14 +24,14 @@ This folder contains the source-controlled Trainer mirror derived from the Stagi
 ## Source evidence and approval boundary
 
 - Each extracted rule candidate must preserve the Telegram post ID, canonical URL, exact verbatim excerpt, excerpt hash, full-post content hash, capture method, and verification flag.
-- The Trainer signs the exact rule content and provenance with HMAC. Financial L2 must independently verify the signature before a rule becomes approval-eligible.
+- The Trainer signs the exact rule content and provenance with HMAC. Financial L2 must independently verify the signature before a rule becomes approval-eligible. Telegram origin is not inferred from a configured channel name: only FuzzyLogic_NDS is currently owner-confirmed official; the other configured channels remain unverified.
 - Extracted rules remain pending. Retrieval, AI extraction, evidence signing, and independent L1 approval are distinct stages.
 - NDS remains the only permitted training methodology until the Technical Analysis Unit demonstrates full NDS mastery. ICT, RTM, and other methods remain blocked.
 
 ## Preview safety
 
-- `/__preview/dry-run`, `/__preview/parser-selftest`, and `/__preview/source-diagnostics` are fetch-only diagnostics. They must never call Workers AI or write KV/D1. The Preview HMAC sample route returns a deterministic signed test fixture, never the signing key; CI forwards only the signature to Financial L2 Preview V31, which returns a Boolean verification result. The scheduled path renews its D1 lease between external operations and journals grouped KV writes before applying them; a later run replays an interrupted journal idempotently. Deferred post records use bounded exponential retry backoff and are reconsidered when due or when source content changes. No transcript provider is currently configured, so video-only posts remain explicitly deferred rather than being treated as extracted text.
-- Candidate V17 used `https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev`. A live check confirmed V17 health responds, but its `/__preview/parser-selftest` route returns HTTP 404. Version V17 is immutable and cannot be patched in place. Candidate V22 is the current diagnostic Preview at `https://e61db611-goldstar-trainer-staging.goldstar-nsl83.workers.dev`; it additionally uses the canonical lowercase Telegram handle `fuzzylogic_nds` for the FuzzyLogic_NDS source. It retains lease renewal, recoverable KV commit journaling, deferred-post retry backoff, and strict configured-source success semantics. CI checks V21 health, parser self-test, actual extraction from all four configured channels, separately reported diagnostic-only channels, and fetch-only Telegram dry-run. The V17-host unit test is a simulation of host-allowlist logic, not a live V17 test. Future immutable versions are accepted only when the hostname matches the exact eight-hex-prefix Trainer Staging pattern.
+- `/__preview/dry-run`, `/__preview/parser-selftest`, and `/__preview/source-diagnostics` are fetch-only diagnostics. They must never call Workers AI or write KV/D1. The Preview HMAC sample route returns a deterministic signed test fixture, never the signing key; the PR5 workflow forwards only the signature to the immutable Financial L2 V36 Preview target, which returns a Boolean verification result. The scheduled path renews its D1 lease between external operations and journals grouped KV writes before applying them; a later run replays an interrupted journal idempotently. Deferred post records use bounded exponential retry backoff and are reconsidered when due or when source content changes. No transcript provider is currently configured, so video-only posts remain explicitly deferred rather than being treated as extracted text.
+- Candidate V17 used `https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev`. A live check confirmed V17 health responds, but its `/__preview/parser-selftest` route returns HTTP 404. Version V17 is immutable and cannot be patched in place. Candidate V22 was a historical diagnostic Preview at `https://e61db611-goldstar-trainer-staging.goldstar-nsl83.workers.dev`; it additionally used the canonical lowercase Telegram handle `fuzzylogic_nds` for the FuzzyLogic_NDS source. It is superseded by Candidate V31 at `https://aa08400e-goldstar-trainer-staging.goldstar-nsl83.workers.dev` (Preview-only; active Staging remains V9). It retains lease renewal, recoverable KV commit journaling, deferred-post retry backoff, and strict configured-source success semantics. CI checks V21 health, parser self-test, actual extraction from all four configured channels, separately reported diagnostic-only channels, and fetch-only Telegram dry-run. The V17-host unit test is a simulation of host-allowlist logic, not a live V17 test. Future immutable versions are accepted only when the hostname matches the exact eight-hex-prefix Trainer Staging pattern.
 - Preview host allowlisting is explicit. Labels/aliases are not assumed to create DNS routes.
 - The Staging Cron remains paused. There is no automatic training run.
 - Authenticated admin execution requires the Staging-only `GOLDSTAR_BRIDGE_SECRET`. No secret values belong in Git, KV, D1, logs, or chat.
@@ -42,10 +52,10 @@ The latest Preview CI confirms:
 - Trainer unit tests: 28/28 passed.
 - Financial L2 unit tests: 75/75 passed.
 - Six TG.ME post pages were retrieved and their individual IDs/canonical Telegram links and captions were matched. All six exposed **zero** video tags, source tags, or direct media URLs in the fetched HTML; this is therefore a metadata index, not lesson-content intake.
-- The strict official Telegram source gate still fails as intended: NDS4ALLVIDEOS returned 20 posts; FuzzyLogic_NDS, BNJ1I, and cottagends returned zero parsed posts. One diagnostic-only source returned 3 posts, but diagnostic-only sources cannot substitute for configured official sources.
+- The strict configured Telegram extraction gate remains blocked: NDS4ALLVIDEOS returned 20 posts; FuzzyLogic_NDS, BNJ1I, and cottagends returned zero parsed posts. Only FuzzyLogic_NDS is currently owner-confirmed official; the other three channels remain unverified. One diagnostic-only source returned 3 posts, but diagnostic-only sources cannot substitute for configured sources.
 
 CI run:
-- [Trainer V26 source gate](https://github.com/blacklight-star/goldstar-financial/actions/runs/42533488887) — unit tests and health/parser/HMAC/TG.ME metadata checks passed; final strict configured-source gate remains red because three official Telegram archives are unavailable.
+- [Trainer V26 source gate](https://github.com/blacklight-star/goldstar-financial/actions/runs/42533488887) — unit tests and health/parser/HMAC/TG.ME metadata checks passed; final configured-source extraction gate remains red because three configured channels had no parsed posts; their origin is not confirmed.
 - [Financial L2 V35 CI](https://github.com/blacklight-star/goldstar-financial/actions/runs/42533340596) — 75/75 tests and all immutable Preview health checks passed.
 
 No AI calls, KV/D1 writes, training, approvals, Cron changes, active deployments, or Production changes were performed. Trainer Staging Cron remains empty; Trainer Staging active deployment remains V9; L2 active deployment remains the pre-existing version. All new Worker versions are Preview-only.
@@ -59,10 +69,10 @@ Latest Preview validation after the Academia authority correction:
 - Cross-Worker HMAC parity passed between Trainer V27 and Financial L2 V36.
 - Academia primary-source catalog check passed: five author-listed PDFs are classified as primary; no Academia request was made by the Worker.
 - Six TG.ME individual post pages were checked for IDs/canonical links/captions. All six exposed zero video tags, source tags, or direct media URLs; they remain metadata-only.
-- The strict configured Telegram-source gate remains red by design: NDS4ALLVIDEOS returned 20 posts; FuzzyLogic_NDS, BNJ1I, and cottagends returned zero parsed posts.
+- The strict configured Telegram-source extraction gate remains red by design: NDS4ALLVIDEOS returned 20 posts; FuzzyLogic_NDS, BNJ1I, and cottagends returned zero parsed posts; only FuzzyLogic_NDS is owner-confirmed official.
 
 CI:
-- [Trainer V27 source gate](https://github.com/blacklight-star/goldstar-financial/actions/runs/42534405204) — unit tests, health, parser, HMAC, Academia primary-source catalog, and TG.ME metadata checks passed; final official Telegram gate remains blocked.
+- [Trainer V27 source gate](https://github.com/blacklight-star/goldstar-financial/actions/runs/42534405204) — unit tests, health, parser, HMAC, Academia primary-source catalog, and TG.ME metadata checks passed; final configured-source extraction gate remains blocked.
 - [Financial L2 V36 CI](https://github.com/blacklight-star/goldstar-financial/actions/runs/42534412570) — 75/75 tests and Preview health passed.
 
 Preview and deployment boundary:
@@ -98,9 +108,9 @@ The author's Academia profile lists both works under "Papers by Dr Iraj Jafarian
 
 The source is primary by authorship/provenance; that does not by itself prove trading performance claims. Do not fine-tune model weights or redistribute source PDFs. Broader/commercial use requires the applicable author/platform permissions to be checked.
 
-### Priority 2 — Official Telegram sources
+### Priority 2 — Configured Telegram channels (provenance-aware)
 
-The configured channels remain unchanged: NDS4ALLVIDEOS, FuzzyLogic_NDS, BNJ1I, and cottagends. Their strict public-post extraction gate remains separate from Academia acquisition.
+The configured channels remain unchanged: NDS4ALLVIDEOS, FuzzyLogic_NDS, BNJ1I, and cottagends. Only FuzzyLogic_NDS is owner-confirmed official; the other three remain unverified pending independent source evidence. Their strict public-post extraction gate remains separate from Academia acquisition.
 
 ### Priority 3 — Third-party archives
 
@@ -110,7 +120,7 @@ TG.ME provides indexed post identifiers and caption metadata for FuzzyLogic_NDS,
 
 - Academia: **primary authority confirmed; manual first-party PDF acquisition/import path pending**. HTTP 403 from the unauthenticated Worker was an access-method limitation, not an authority finding.
 - TG.ME: metadata index only; no video/media URLs found in six sampled posts.
-- Telegram: NDS4ALLVIDEOS returned 20 posts; the other three configured channels returned zero parsed posts in the last strict run.
+- Telegram: NDS4ALLVIDEOS returned 20 posts; the other three configured channels returned zero parsed posts in the last strict run. Their authority is not inferred from their configuration.
 - No AI call, KV/D1 write, training, approval, Cron change, active deployment, or Production change was performed by the source-catalog correction.
 - L1 remains the final approval authority; L2 verifies evidence; Trainer only extracts and signs candidate evidence.
 
