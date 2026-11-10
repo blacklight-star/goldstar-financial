@@ -196,7 +196,7 @@ function evidenceRule(overrides = {}) {
     validationStatus: "pending",
     contentType: "trading_rule",
     sourcePostId: "123",
-    sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123",
+    sourcePostUrl: "https://t.me/s/FuzzyLogic_NDS/123",
     sourceExcerpt,
     sourceExcerptHash,
     sourceExcerptVerified: true,
@@ -455,6 +455,34 @@ test("rules without rule-specific verified source evidence cannot be approved", 
   assert.equal(response.status, 409);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS_pending", { type: "json" })).length, 1);
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
+});
+
+test("Telegram evidence requires the exact registered source origin type", async () => {
+  const rules = [
+    evidenceRule({ id: "origin-archive", sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123", sourceOriginType: "third_party_video_archive" }),
+    evidenceRule({ id: "origin-official", sourcePostUrl: "https://t.me/s/FuzzyLogic_NDS/123", sourceOriginType: "official_telegram_channel" }),
+    evidenceRule({ id: "origin-aggregator", sourcePostUrl: "https://t.me/s/BNJ1I/123", sourceOriginType: "third_party_course_aggregator" }),
+    evidenceRule({ id: "origin-community", sourcePostUrl: "https://t.me/s/cottagends/123", sourceOriginType: "community_repost_channel" }),
+    evidenceRule({ id: "origin-mismatch", sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123", sourceOriginType: "official_telegram_channel" }),
+    evidenceRule({ id: "origin-unknown", sourcePostUrl: "https://t.me/s/unknown_channel/123", sourceOriginType: "unverified_telegram_source" }),
+    evidenceRule({ id: "origin-missing-third-party", sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123", sourceOriginType: "" }),
+    evidenceRule({ id: "origin-legacy-official", sourcePostUrl: "https://t.me/s/FuzzyLogic_NDS/123", sourceOriginType: "" })
+  ];
+  const state = makeEnv({ pending: rules });
+  const response = await worker.fetch(makeRequest("/training/pending", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  const eligible = new Map(result.rules.map(rule => [rule.id, rule.approvalEligible]));
+  assert.equal(eligible.get("origin-archive"), true);
+  assert.equal(eligible.get("origin-official"), true);
+  assert.equal(eligible.get("origin-aggregator"), true);
+  assert.equal(eligible.get("origin-community"), true);
+  assert.equal(eligible.get("origin-mismatch"), false);
+  assert.equal(eligible.get("origin-unknown"), false);
+  assert.equal(eligible.get("origin-missing-third-party"), false);
+  assert.equal(eligible.get("origin-legacy-official"), true);
 });
 
 test("verified owner approval writes approved rules and a D1 audit record", async () => {
@@ -960,7 +988,7 @@ test("Preview-only HMAC interoperability route verifies the fixed Trainer fixtur
     conditions: ["Hook precedes Rally", "Rally precedes Flag"],
     priority: 5,
     sourcePostId: "987654321",
-    sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/987654321",
+    sourcePostUrl: "https://t.me/s/FuzzyLogic_NDS/987654321",
     sourceExcerpt: "Preview-only NDS HMAC parity fixture: Hook precedes Rally, and the Flag follows the Rally.",
     sourceExcerptHash: createHash("sha256").update("Preview-only NDS HMAC parity fixture: Hook precedes Rally, and the Flag follows the Rally.").digest("hex"),
     sourcePostContentHash: createHash("sha256").update("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction.").digest("hex"),
