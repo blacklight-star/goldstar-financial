@@ -457,6 +457,36 @@ test("rules without rule-specific verified source evidence cannot be approved", 
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
 });
 
+test("2019 multifractal NDS author paper is accepted only with its pinned hash", async () => {
+  const valid = evidenceRule({
+    id: "author-paper-2019",
+    sourcePostId: "129612067",
+    sourcePostUrl: "https://www.academia.edu/129612067/Nodal_Displacement_Sequencing_A_Multifractal_Framework_for_Hierarchical_Market_Cycle_Analysis",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceOriginType: "primary_author_published_source",
+    sourceDocumentFormat: "application/pdf",
+    sourceDocumentSha256: "9b72b67b77f4f6b99e04b6f22f5f3b56b3d8c2dbeea8d4b4b3f84d62c9f7a4d2"
+  });
+  const invalid = evidenceRule({
+    id: "author-paper-2019-wrong-hash",
+    sourcePostId: "129612067",
+    sourcePostUrl: "https://www.academia.edu/129612067/Nodal_Displacement_Sequencing_A_Multifractal_Framework_for_Hierarchical_Market_Cycle_Analysis",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceOriginType: "primary_author_published_source",
+    sourceDocumentFormat: "application/pdf",
+    sourceDocumentSha256: "5".repeat(64)
+  });
+  const state = makeEnv({ pending: [valid, invalid] });
+  const response = await worker.fetch(makeRequest("/training/pending", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  const eligible = new Map(result.rules.map(rule => [rule.id, rule.approvalEligible]));
+  assert.equal(eligible.get("author-paper-2019"), true);
+  assert.equal(eligible.get("author-paper-2019-wrong-hash"), false);
+});
+
 test("Academia NDS source documents enforce origin classification and pinned PDF hashes", async () => {
   const validFarsi = evidenceRule({
     id: "farsi-course",
