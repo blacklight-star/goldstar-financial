@@ -9,10 +9,10 @@ const AI_MODEL = "@cf/zai-org/glm-4.7-flash";
 const MARKET_ANALYSIS_ENABLED = false;
 const KV_CACHE_TTL = 60;
 const NDS_CHANNELS = [
-  {url:"https://t.me/s/NDS4ALLVIDEOS",name:"NDS4ALLVIDEOS"},
-  {url:"https://t.me/s/FuzzyLogic_NDS",name:"FuzzyLogic_NDS"},
-  {url:"https://t.me/s/BNJ1I",name:"BNJ1I"},
-  {url:"https://t.me/s/cottagends",name:"cottagends"},
+  {url:"https://t.me/s/NDS4ALLVIDEOS",name:"NDS4ALLVIDEOS",sourceOriginType:"third_party_video_archive"},
+  {url:"https://t.me/s/FuzzyLogic_NDS",name:"FuzzyLogic_NDS",sourceOriginType:"official_telegram_channel"},
+  {url:"https://t.me/s/BNJ1I",name:"BNJ1I",sourceOriginType:"third_party_course_aggregator"},
+  {url:"https://t.me/s/cottagends",name:"cottagends",sourceOriginType:"community_repost_channel"},
 ];
 const NDS_PRIMARY_AUTHOR_DOCUMENTS = new Map([
   ["129627974", {
@@ -257,13 +257,21 @@ async function hasVerifiedRuleEvidence(rule, env) {
     if (sourceUrl.protocol !== "https:") return false;
     var captureMethod = String(rule.sourceCaptureMethod || "");
     var originType = String(rule.sourceOriginType || "");
-    if (captureMethod === "telegram_public_post_html" &&
-        (originType === "official_telegram_channel" || originType === "")) {
-      // Empty origin type is accepted only for previously signed Telegram records.
+    if (captureMethod === "telegram_public_post_html") {
       if (sourceUrl.hostname !== "t.me") return false;
       var telegramMatch = sourceUrl.pathname.match(/^\/s\/([A-Za-z0-9_]+)\/(\d+)$/);
       if (!telegramMatch || telegramMatch[2] !== sourcePostId) return false;
-      if (!NDS_CHANNELS.some(function(channel) { return channel.name === telegramMatch[1]; })) return false;
+      var registeredChannel = NDS_CHANNELS.find(function(channel) {
+        return channel.name.toLowerCase() === telegramMatch[1].toLowerCase();
+      });
+      if (!registeredChannel) return false;
+      // Exact origin typing is required for third-party channels. The empty
+      // legacy type is tolerated only for the user-confirmed author-managed channel.
+      if (originType === "") {
+        if (registeredChannel.sourceOriginType !== "official_telegram_channel") return false;
+      } else if (originType !== registeredChannel.sourceOriginType) {
+        return false;
+      }
     } else if (captureMethod === "academia_account_pdf_download" &&
         originType === "primary_author_published_source") {
       var authorDoc = NDS_PRIMARY_AUTHOR_DOCUMENTS.get(sourcePostId);
@@ -300,7 +308,7 @@ async function buildPreviewHmacParityRule(signature) {
     conditions: ["Hook precedes Rally", "Rally precedes Flag"],
     priority: 5,
     sourcePostId: "987654321",
-    sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/987654321",
+    sourcePostUrl: "https://t.me/s/FuzzyLogic_NDS/987654321",
     sourceExcerpt,
     sourceExcerptHash: await sha256Hex(sourceExcerpt),
     sourcePostContentHash: await sha256Hex("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction."),
