@@ -175,9 +175,9 @@ export function isNdsRelevantText(value) {
     hasNdsRelatedPair(sentences, /\brall(?:y|ies)\b|رالی/u, /\bdrops?\b|دراپ/u),
     hasNdsRelatedPair(sentences, /\bnodes?\b|گره|نود/u, /\b(?:parent|child|priority|higher|lower|sub-?node)\b|والد|فرزند|اولویت/u)
   ];
-  const hasNdsContext = /\\bnds\\b/u.test(text);
+  const hasNdsContext = /\bnds\b/u.test(text);
   const hasMarketContext =
-    /\\b(?:market|price|chart|trading|candlestick|timeframe|forex|stock|instrument)\\b|بازار|قیمت|نمودار|معامله|کندل|تایم‌فریم|نماد/u.test(text);
+    /\b(?:market|price|chart|trading|candlestick|timeframe|forex|stock|instrument)\b|بازار|قیمت|نمودار|معامله|کندل|تایم‌فریم|نماد/u.test(text);
   if (relationships.filter(Boolean).length >= 2 && hasNdsContext && hasMarketContext) return true;
 
   // Ambiguous co-occurrence is not evidence of NDS. Unanchored or non-market
