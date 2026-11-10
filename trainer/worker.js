@@ -261,6 +261,8 @@ const KNOWLEDGE_WRITE_LOCK_LEASE_MS = 10 * 60 * 1000;
 const KNOWLEDGE_COMMIT_JOURNAL_KEY = "trainer:commit_journal";
 const MAX_KNOWLEDGE_JOURNAL_BYTES = 1024 * 1024;
 const MAX_DEFERRED_RETRIES = 5;
+export const NDS_CLASSIFIER_VERSION = "nds-classifier-v2";
+export const NDS_GATE_VERSION = "nds-gate-v2";
 
 async function acquireKnowledgeWriteLock(env, ownerToken) {
   if (!env.DB || typeof env.DB.prepare !== "function") throw new Error("Atomic D1 knowledge lock binding unavailable");
@@ -350,6 +352,13 @@ export async function persistKnowledgeCommit(env, ownerToken, writes) {
 
 export function isDeferredRetryDue(item, nowMs = Date.now()) {
   if (!item || typeof item !== "object") return false;
+  const versionChanged =
+    item.classifierVersion !== NDS_CLASSIFIER_VERSION ||
+    item.gateVersion !== NDS_GATE_VERSION;
+  // A version change triggers one safe re-evaluation even when the old retry
+  // cap or backoff would otherwise suppress the item. The new record stores
+  // the current versions, so this does not create an endless retry loop.
+  if (versionChanged) return true;
   const retryCount = Number.isInteger(item.retryCount) ? item.retryCount : 0;
   if (retryCount >= MAX_DEFERRED_RETRIES) return false;
   const dueAt = Date.parse(item.nextRetryAt || item.recordedAt || "");
@@ -366,6 +375,10 @@ export function buildDeferredRecord(post, previous, nowMs = Date.now()) {
     sourcePostId: post.sourcePostId,
     sourcePostUrl: post.sourcePostUrl,
     contentHash: post.contentHash,
+    sourceOriginType: post.sourceOriginType || "unverified_telegram_source",
+    sourceCaptureMethod: post.sourceCaptureMethod || "telegram_public_post_html",
+    classifierVersion: NDS_CLASSIFIER_VERSION,
+    gateVersion: NDS_GATE_VERSION,
     links: (post.links || []).slice(0, 10),
     youtubeLinks: (post.youtubeLinks || []).slice(0, 5),
     videoUrls: (post.videoUrls || []).slice(0, 5),
@@ -838,7 +851,7 @@ async function runScheduledTraining(env) {
           const postText = String(post.text || "");
           const contentHash = await sha256Hex(postText + "\nlinks:" + (post.links || []).join("\n") + "\nvideo:" + (post.videoUrls || []).join("\n"));
           const previousDeferred = deferredById.get(postId);
-          const retryDue = previousDeferred && previousDeferred.contentHash === contentHash && isDeferredRetryDue(previousDeferred);
+          const retryDue = previousDeferred && isDeferredRetryDue(previousDeferred);
           if (hashMap[postId] !== contentHash || retryDue) {
             changedPosts.push({
               ...post, sourcePostId: postId, text: postText, contentHash: contentHash,
