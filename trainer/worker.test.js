@@ -1,7 +1,7 @@
 import test from "node:test";
 import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
-import worker, { isNdsRelevantText, signSourceEvidence, renewKnowledgeWriteLock, recoverPendingKnowledgeCommit, persistKnowledgeCommit, isDeferredRetryDue, buildDeferredRecord } from "./worker.js";
+import worker, { isNdsRelevantText, signSourceEvidence, renewKnowledgeWriteLock, recoverPendingKnowledgeCommit, persistKnowledgeCommit, isDeferredRetryDue, buildDeferredRecord, sourceOriginTypeForChannel } from "./worker.js";
 
 test("health reports staging scheduler paused", async () => {
   const response = await worker.fetch(new Request("https://trainer.example/health"), {}, {});
@@ -326,12 +326,24 @@ test("rejects generic ICT vocabulary padded with NDS-like words", () => {
   assert.equal(isNdsRelevantText(long("Liquidity and order blocks are discussed with Nodes, Flags, Rally, Sequence and Fractal terms, but no structural NDS relationship is described.")), false);
 });
 
-test("accepts Persian NDS terminology", () => {
-  assert.equal(isNdsRelevantText(long("در استراتژی NDS، هوک، رالی، فلگ، سکانس، گره و تقارن اجزای ساختار چرخه هستند.")), true);
+test("rejects Persian NDS acronym plus generic component vocabulary without relationships", () => {
+  assert.equal(isNdsRelevantText(long("در استراتژی NDS برای معماری نرم‌افزار، Node و Hook و Flag و Rally و Sequence و Fractal و Symmetry فقط نام اجزای گراف، callbackها و وضعیت‌های برنامه هستند و هیچ رابطه ساختاری از روش معاملاتی را توضیح نمی‌دهند.")), false);
+});
+
+test("rejects hostile software architecture text despite NDS strategy and component vocabulary", () => {
+  assert.equal(isNdsRelevantText(long("The NDS strategy for software architecture describes components and structure. Nodes, hooks, flags, rally, sequence, cycles, fractals and symmetry are labels for graph components, event callbacks, state flags and repeated test runs, not market-method relationships.")), false);
 });
 
 test("does not reject an NDS post merely because it also mentions ICT terms", () => {
   assert.equal(isNdsRelevantText(long("NDS Hook and Flag sequencing is distinct from an order block or liquidity sweep; the 123Flag remains the entry structure.")), true);
+});
+
+test("Telegram source origins are explicit and unknown channels never default to official", () => {
+  assert.equal(sourceOriginTypeForChannel("NDS4ALLVIDEOS"), "third_party_video_archive");
+  assert.equal(sourceOriginTypeForChannel("FuzzyLogic_NDS"), "official_telegram_channel");
+  assert.equal(sourceOriginTypeForChannel("BNJ1I"), "third_party_course_aggregator");
+  assert.equal(sourceOriginTypeForChannel("cottagends"), "community_repost_channel");
+  assert.equal(sourceOriginTypeForChannel("unknown-channel"), "unverified_telegram_source");
 });
 
 test("public preview dry-run endpoint is fetch-only and never calls AI or writes KV", async () => {
