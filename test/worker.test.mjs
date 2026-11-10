@@ -457,6 +457,66 @@ test("rules without rule-specific verified source evidence cannot be approved", 
   assert.equal((await state.KNOWLEDGE.get("knowledge_NDS", { type: "json" })).length, 0);
 });
 
+test("Academia NDS source documents enforce origin classification and pinned PDF hashes", async () => {
+  const validFarsi = evidenceRule({
+    id: "farsi-course",
+    sourcePostId: "129628090",
+    sourcePostUrl: "https://www.academia.edu/129628090/NDS_farsi",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceOriginType: "third_party_course_compilation",
+    sourceDocumentFormat: "application/pdf",
+    sourceDocumentSha256: "50575a4f99a9f623c3ac2b3cf06b97d07d06bdb6b5cfed57778406d46297f4b9"
+  });
+  const validAuthorPaper = evidenceRule({
+    id: "author-paper",
+    sourcePostId: "122576333",
+    sourcePostUrl: "https://www.academia.edu/122576333/Nodal_Displacement_Sequencing_NDS_New_Approach",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceOriginType: "primary_author_published_source",
+    sourceDocumentFormat: "application/pdf",
+    sourceDocumentSha256: "65ab04fded0d3f3c77d8c45a1a2a2cb8dca34d9a8dd9b2f37a3b26a0f9c0b6e4"
+  });
+  const wrongFarsiOrigin = evidenceRule({
+    id: "farsi-wrong-origin",
+    sourcePostId: "129628090",
+    sourcePostUrl: "https://www.academia.edu/129628090/NDS_farsi",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceOriginType: "primary_author_published_source",
+    sourceDocumentFormat: "application/pdf",
+    sourceDocumentSha256: "50575a4f99a9f623c3ac2b3cf06b97d07d06bdb6b5cfed57778406d46297f4b9"
+  });
+  const wrongFarsiHash = evidenceRule({
+    id: "farsi-wrong-hash",
+    sourcePostId: "129628090",
+    sourcePostUrl: "https://www.academia.edu/129628090/NDS_farsi",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceOriginType: "third_party_course_compilation",
+    sourceDocumentFormat: "application/pdf",
+    sourceDocumentSha256: "1".repeat(64)
+  });
+  const wrongAuthorHash = evidenceRule({
+    id: "author-wrong-hash",
+    sourcePostId: "122576333",
+    sourcePostUrl: "https://www.academia.edu/122576333/Nodal_Displacement_Sequencing_NDS_New_Approach",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    sourceOriginType: "primary_author_published_source",
+    sourceDocumentFormat: "application/pdf",
+    sourceDocumentSha256: "2".repeat(64)
+  });
+  const state = makeEnv({ pending: [validFarsi, validAuthorPaper, wrongFarsiOrigin, wrongFarsiHash, wrongAuthorHash] });
+  const response = await worker.fetch(makeRequest("/training/pending", undefined, {
+    "X-API-Key": "general-api-key"
+  }), state.env, ctx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  const eligible = new Map(result.rules.map(rule => [rule.id, rule.approvalEligible]));
+  assert.equal(eligible.get("farsi-course"), true);
+  assert.equal(eligible.get("author-paper"), true);
+  assert.equal(eligible.get("farsi-wrong-origin"), false);
+  assert.equal(eligible.get("farsi-wrong-hash"), false);
+  assert.equal(eligible.get("author-wrong-hash"), false);
+});
+
 test("Telegram evidence requires the exact registered source origin type", async () => {
   const rules = [
     evidenceRule({ id: "origin-archive", sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123", sourceOriginType: "third_party_video_archive" }),
