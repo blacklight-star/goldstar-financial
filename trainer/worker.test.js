@@ -337,6 +337,29 @@ test("accepts core NDS foundation sections from the author-managed source", () =
   for (const post of foundationPosts) assert.equal(isNdsRelevantText(long(post), official), true, post);
 });
 
+test("accepts additional author-source NDS foundations documented in the 2024 paper", () => {
+  const official = sourceOriginTypeForChannel("FuzzyLogic_NDS");
+  const foundationPosts = [
+    "Market Geometry identifies nodes as critical reversal points in the market price structure.",
+    "Fractal Scaling divides trend functions and pullback functions into three sub-trends across market timeframes.",
+    "Symmetrical Analysis describes two hooks and a trend, with each hook retracing 86% of its initial price move.",
+    "The market cycle contains three reversal points and three mini-rallies in a hierarchical structure."
+  ];
+  for (const post of foundationPosts) assert.equal(isNdsRelevantText(long(post), official), true, post);
+});
+
+test("the same author-paper foundation phrases remain insufficient from third-party or unknown channels", () => {
+  const posts = [
+    "Market Geometry identifies nodes as critical reversal points in the market price structure.",
+    "Fractal Scaling divides trend functions and pullback functions into three sub-trends across market timeframes.",
+    "Symmetrical Analysis describes two hooks and a trend, with each hook retracing 86% of its initial price move."
+  ];
+  for (const post of posts) {
+    assert.equal(isNdsRelevantText(long(post), "third_party_video_archive"), false, post);
+    assert.equal(isNdsRelevantText(long(post), "unverified_telegram_source"), false, post);
+  }
+});
+
 test("does not accept generic NDS foundation vocabulary from an unverified source without structural evidence", () => {
   assert.equal(isNdsRelevantText(long("Cycle Analysis describes recurring cycles in the financial market and their life span."), "unverified_telegram_source"), false);
 });
