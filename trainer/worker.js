@@ -4,6 +4,16 @@ const CHANNELS = [
   { url: "https://t.me/s/BNJ1I", name: "BNJ1I" },
   { url: "https://t.me/s/cottagends", name: "cottagends" }
 ];
+
+// Only the author-managed FuzzyLogic_NDS channel has owner-confirmed official provenance.
+// Other configured Telegram channels remain unverified until independently established.
+const SOURCE_ORIGIN_BY_CHANNEL = Object.freeze({
+  FuzzyLogic_NDS: "official_telegram_channel"
+});
+
+export function sourceOriginTypeForChannel(name) {
+  return SOURCE_ORIGIN_BY_CHANNEL[String(name || "")] || "unverified_telegram_source";
+}
 const ACADEMIA_PRIMARY_DOCUMENTS = [
   {
     documentId: "129627974",
@@ -115,7 +125,7 @@ const TGME_ARCHIVE_POSTS = [
 const INGESTION_SOURCES = CHANNELS.map(channel => ({
   ...channel,
   sourceType: "telegram",
-  sourceOriginType: "official_telegram_channel",
+  sourceOriginType: sourceOriginTypeForChannel(channel.name),
   sourceCaptureMethod: "telegram_public_post_html"
 }));
 const DIAGNOSTIC_CHANNELS = [
@@ -129,8 +139,9 @@ const AI_MODEL = "@cf/zai-org/glm-4.7-flash";
 // High-precision NDS retrieval gate. It is a source prefilter only:
 // it never validates, approves, or promotes a trading rule.
 const NDS_MIN_SOURCE_LENGTH = 120;
-const NDS_EXPLICIT_ANCHOR =
-  /\bnodal\s+displacement\s+sequencing\b|\b123\s*[-_ ]?\s*flag\b|\bhook\s*[-–—>→]+\s*hook\s*[-–—>→]+\s*rall(?:y|ies)\b|هوک\s*[-–—>→]+\s*هوک\s*[-–—>→]+\s*رالی/u;
+const NDS_FULL_NAME = /\bnodal\s+displacement\s+sequencing\b/u;
+const NDS_SPECIFIC_PATTERN =
+  /\b123\s*[-_ ]?\s*flag\b|\bhook\s*[-–—>→]+\s*hook\s*[-–—>→]+\s*rall(?:y|ies)\b|هوک\s*[-–—>→]+\s*هوک\s*[-–—>→]+\s*رالی/u;
 const NDS_RELATION_CONNECTOR =
   /\b(?:after|before|then|followed\s+by|following|preced(?:e|es|ed)|prior\s+to|contains?|includes?|consists?\s+of|made\s+of|formed\s+by|within|parent|child|higher|lower|priority|ends?\s+with|closes?\s+with)\b|بعد(?:\s*از)?|پس\s*از|سپس|قبل\s*از|به\s*دنبال|شامل|متشکل\s*از|والد|فرزند|اولویت|پایان|بسته\s*می\s*شود/u;
 const NDS_SENTENCE_BOUNDARY = /[.!?؟؛;\n]+/u;
@@ -156,7 +167,6 @@ function hasNdsRelatedPair(sentences, leftPattern, rightPattern) {
 export function isNdsRelevantText(value) {
   const text = normalizeNdsText(value);
   if (text.trim().length < NDS_MIN_SOURCE_LENGTH) return false;
-  if (NDS_EXPLICIT_ANCHOR.test(text)) return true;
 
   const sentences = text.split(NDS_SENTENCE_BOUNDARY).map(sentence => sentence.trim()).filter(Boolean);
   const relationships = [
@@ -167,25 +177,13 @@ export function isNdsRelevantText(value) {
     hasNdsRelatedPair(sentences, /\brall(?:y|ies)\b|رالی/u, /\bdrops?\b|دراپ/u),
     hasNdsRelatedPair(sentences, /\bnodes?\b|گره|نود/u, /\b(?:parent|child|priority|higher|lower|sub-?node)\b|والد|فرزند|اولویت/u)
   ];
-  if (relationships.filter(Boolean).length >= 2) return true;
+  const relationshipCount = relationships.filter(Boolean).length;
 
-  // Preserve compact methodology summaries when the source explicitly names NDS
-  // and describes a broad set of its structural components.
-  const namedMethod =
-    /\bnds\b[\s\S]{0,45}\b(?:strategy|method|system|framework)\b|\b(?:strategy|method|system|framework)\b[\s\S]{0,45}\bnds\b|استراتژی[\s\S]{0,45}\bnds\b|روش[\s\S]{0,45}\bnds\b/u.test(text);
-  const componentFamilies = [
-    /\bnodes?\b|گره|نود/u,
-    /\bhooks?\b|هوک/u,
-    /\brall(?:y|ies)?\b|رالی/u,
-    /\bflags?\b|فلگ|لیپ/u,
-    /\bsequenc(?:e|ing)\b|توالی|سکانس/u,
-    /\bcycles?\b|چرخه|سایکل/u,
-    /\bfractals?\b|فراکتال/u,
-    /\bsymmetry\b|تقارن/u
-  ];
-  const componentCount = componentFamilies.filter(pattern => pattern.test(text)).length;
-  const structuralDescription = /\b(?:components?|elements?|structure|structural|building blocks)\b|اجزا|عناصر|ساختار|مولفه/u.test(text);
-  return namedMethod && componentCount >= 5 && structuralDescription;
+  // Do not accept the NDS acronym plus generic market/software vocabulary.
+  // Require either a named NDS methodology with multiple structural relations,
+  // or a distinctive NDS pattern. Ambiguous material remains deferred.
+  if (NDS_SPECIFIC_PATTERN.test(text)) return true;
+  return NDS_FULL_NAME.test(text) && relationshipCount >= 2;
 }
 
 // Immutable Preview URLs are version-specific; aliases are not DNS routes.
@@ -503,7 +501,7 @@ function parseTelegramPosts(html, channel) {
       sourcePostId, sourcePostKey: postKey, sourcePostUrl: "https://t.me/s/" + postKey,
       text: postText, links: uniqueLinks, youtubeLinks, videoUrls: uniqueVideoUrls,
       sourceCaptureMethod: "telegram_public_post_html",
-      sourceOriginType: "official_telegram_channel"
+      sourceOriginType: sourceOriginTypeForChannel(channel.name)
     });
   }
   return posts;
@@ -926,7 +924,7 @@ async function runScheduledTraining(env) {
             sourceExcerptVerified: true,
             sourcePostContentHash: await sha256Hex(post.text),
             sourceCaptureMethod: post.sourceCaptureMethod || channel.sourceCaptureMethod || "telegram_public_post_html",
-            sourceOriginType: post.sourceOriginType || channel.sourceOriginType || "official_telegram_channel",
+            sourceOriginType: post.sourceOriginType || channel.sourceOriginType || sourceOriginTypeForChannel(channel.name),
             collectedAt: new Date().toISOString(),
             validationStatus: "pending"
           };
@@ -1008,15 +1006,15 @@ export default {
           conditions: ["Hook precedes Rally", "Rally precedes Flag"],
           priority: 5,
           sourcePostId: "987654321",
-          sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/987654321",
+          sourcePostUrl: "https://t.me/s/fuzzylogic_nds/987654321",
+          sourceName: "FuzzyLogic_NDS",
           sourceExcerpt,
           sourceExcerptHash: await sha256Hex(sourceExcerpt),
           sourcePostContentHash: await sha256Hex("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction."),
           sourceCaptureMethod: "telegram_public_post_html",
-          sourceOriginType: "official_telegram_channel",
+          sourceOriginType: sourceOriginTypeForChannel("FuzzyLogic_NDS"),
           sourceExcerptVerified: true
         };
-        sample.sourceOriginType = "official_telegram_channel";
         sample.sourceEvidenceSignature = await signSourceEvidence(env, sample);
         return json({ ok: true, sample: sample });
       } catch (_) {
