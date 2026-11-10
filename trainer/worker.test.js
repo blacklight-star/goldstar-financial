@@ -1,7 +1,7 @@
 import test from "node:test";
 import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
-import worker, { isNdsRelevantText, signSourceEvidence, renewKnowledgeWriteLock, recoverPendingKnowledgeCommit, persistKnowledgeCommit, isDeferredRetryDue, buildDeferredRecord, sourceOriginTypeForChannel } from "./worker.js";
+import worker, { isNdsRelevantText, signSourceEvidence, renewKnowledgeWriteLock, recoverPendingKnowledgeCommit, persistKnowledgeCommit, isDeferredRetryDue, buildDeferredRecord, sourceOriginTypeForChannel, NDS_CLASSIFIER_VERSION, NDS_GATE_VERSION } from "./worker.js";
 
 test("health reports staging scheduler paused", async () => {
   const response = await worker.fetch(new Request("https://trainer.example/health"), {}, {});
@@ -537,29 +537,41 @@ test("knowledge write lease renews only for the current unexpired owner", async 
   );
 });
 
-test("deferred posts are re-evaluated after backoff and stop after the retry cap", () => {
+test("deferred posts respect backoff, retry caps and classifier/gate version changes", () => {
   const now = Date.UTC(2026, 10, 9, 12, 0, 0);
-  assert.equal(isDeferredRetryDue({ retryCount: 0, nextRetryAt: new Date(now + 1000).toISOString() }, now), false);
-  assert.equal(isDeferredRetryDue({ retryCount: 0, nextRetryAt: new Date(now - 1000).toISOString() }, now), true);
-  assert.equal(isDeferredRetryDue({ retryCount: 5, nextRetryAt: new Date(now - 1000).toISOString() }, now), false);
+  const current = { classifierVersion: NDS_CLASSIFIER_VERSION, gateVersion: NDS_GATE_VERSION };
+  assert.equal(isDeferredRetryDue({ ...current, retryCount: 0, nextRetryAt: new Date(now + 1000).toISOString() }, now), false);
+  assert.equal(isDeferredRetryDue({ ...current, retryCount: 0, nextRetryAt: new Date(now - 1000).toISOString() }, now), true);
+  assert.equal(isDeferredRetryDue({ ...current, retryCount: 5, nextRetryAt: new Date(now - 1000).toISOString() }, now), false);
+  assert.equal(isDeferredRetryDue({ retryCount: 5, nextRetryAt: new Date(now + 86400000).toISOString() }, now), true);
+  assert.equal(isDeferredRetryDue({ ...current, classifierVersion: "nds-classifier-v1", retryCount: 5, nextRetryAt: new Date(now + 86400000).toISOString() }, now), true);
+  assert.equal(isDeferredRetryDue({ ...current, gateVersion: "nds-gate-v1", retryCount: 5, nextRetryAt: new Date(now + 86400000).toISOString() }, now), true);
 
   const post = {
     sourcePostId: "321",
     sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/321",
     contentHash: "a".repeat(64),
+    sourceOriginType: "third_party_video_archive",
+    sourceCaptureMethod: "telegram_public_post_html",
     text: "A short post",
     links: [],
     youtubeLinks: [],
     videoUrls: [],
     deferredRetry: true
   };
-  const previous = { contentHash: post.contentHash, retryCount: 2 };
+  const previous = { contentHash: post.contentHash, retryCount: 2, ...current };
   const next = buildDeferredRecord(post, previous, now);
   assert.equal(next.retryCount, 3);
   assert.equal(Date.parse(next.nextRetryAt), now + 24 * 60 * 60 * 1000 * 8);
+  assert.equal(next.classifierVersion, NDS_CLASSIFIER_VERSION);
+  assert.equal(next.gateVersion, NDS_GATE_VERSION);
+  assert.equal(next.sourceOriginType, "third_party_video_archive");
+  assert.equal(next.sourceCaptureMethod, "telegram_public_post_html");
 
   const edited = buildDeferredRecord({ ...post, contentHash: "b".repeat(64), deferredRetry: false }, previous, now);
   assert.equal(edited.retryCount, 0);
+  assert.equal(edited.classifierVersion, NDS_CLASSIFIER_VERSION);
+  assert.equal(edited.gateVersion, NDS_GATE_VERSION);
 });
 
 test("partial KV commit leaves a journal that the next owner can replay idempotently", async () => {
