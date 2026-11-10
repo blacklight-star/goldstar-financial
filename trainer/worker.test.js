@@ -312,14 +312,14 @@ test("rejects lexical co-occurrence without NDS relationships", () => {
   assert.equal(isNdsRelevantText(long("A rally follows a resistance break, while a flag appears near a fractal support zone and a symmetry level.")), false);
 });
 
-test("accepts linked NDS structural relationships", () => {
-  assert.equal(isNdsRelevantText(long("The Hook contains three Nodes, then the next Rally follows the completed Hook structure and the sequence ends with a Flag.")), true);
-  assert.equal(isNdsRelevantText(long("The parent Node defines the child Node priority; the Hook then precedes the Rally before the Flag closes the cycle.")), true);
+test("accepts linked NDS structural relationships in market context", () => {
+  assert.equal(isNdsRelevantText(long("In NDS price charts, the Hook contains three Nodes, then the next Rally follows the completed Hook structure and the sequence ends with a Flag.")), true);
+  assert.equal(isNdsRelevantText(long("In NDS market structure, the parent Node defines the child Node priority; the Hook then precedes the Rally before the Flag closes the cycle.")), true);
 });
 
 test("accepts Persian NDS relationships after Unicode and digit normalization", () => {
-  assert.equal(isNdsRelevantText(long("در ساختار NDS، هوک پس از تشکیل گره‌ها شکل می‌گیرد؛ سپس رالی ایجاد می‌شود و پس از آن فلگ پایان چرخه را مشخص می‌کند.")), true);
-  assert.equal(isNdsRelevantText(long("در این روش، گره والد اولویت گره فرزند را تعیین می‌کند و هوک پس از آن به رالی منتهی می‌شود.")), true);
+  assert.equal(isNdsRelevantText(long("در نمودار قیمت و ساختار NDS، هوک پس از تشکیل گره‌ها شکل می‌گیرد؛ سپس رالی ایجاد می‌شود و پس از آن فلگ پایان چرخه را مشخص می‌کند.")), true);
+  assert.equal(isNdsRelevantText(long("در روش NDS روی نمودار قیمت، گره والد اولویت گره فرزند را تعیین می‌کند و هوک پس از آن به رالی منتهی می‌شود.")), true);
 });
 
 test("rejects generic ICT vocabulary padded with NDS-like words", () => {
@@ -336,6 +336,14 @@ test("rejects hostile software architecture text despite NDS strategy and compon
 
 test("does not reject an NDS post merely because it also mentions ICT terms", () => {
   assert.equal(isNdsRelevantText(long("NDS Hook and Flag sequencing is distinct from an order block or liquidity sweep; the 123Flag remains the entry structure.")), true);
+});
+
+test("rejects structural relationships without NDS or market context", () => {
+  assert.equal(isNdsRelevantText(long("In a market chart, the Hook contains three Nodes, then the next Rally follows and the Flag closes the cycle.")), false);
+});
+
+test("rejects software architecture with NDS acronym and structural relationships but no market context", () => {
+  assert.equal(isNdsRelevantText(long("The NDS strategy for software architecture describes components and structure. Hooks contain nodes; then a rally follows and flags close the sequence. These are graph callbacks, state transitions and test-run labels.")), false);
 });
 
 test("Telegram source origins are explicit and unknown channels never default to official", () => {
