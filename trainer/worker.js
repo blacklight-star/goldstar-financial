@@ -139,6 +139,8 @@ const AI_MODEL = "@cf/zai-org/glm-4.7-flash";
 const NDS_MIN_SOURCE_LENGTH = 120;
 const NDS_EXPLICIT_ANCHOR =
   /\bnodal\s+displacement\s+sequencing\b|\b123\s*[-_ ]?\s*flag\b|\bhook\s*[-–—>→]+\s*hook\s*[-–—>→]+\s*rall(?:y|ies)\b|هوک\s*[-–—>→]+\s*هوک\s*[-–—>→]+\s*رالی/u;
+const NDS_FOUNDATION_TERM =
+  /\b(?:cycle\s+analysis|fractal\s+analysis|price\s+symmetry|zero[-\s]?sum\s+game|positive\s+hook|negative\s+hook|sequencing\s+in\s+different\s+market\s+structures)\b|آنالیز\s*چرخه(?:ای)?|تحلیل\s*چرخه(?:ای)?|تقارن\s*قیمتی|تقارن\s*زمانی|تحلیل\s*فراکتال|بازی\s*مجموع(?:[-\s]صفر)?|هوک\s*مثبت|هوک\s*منفی|سکانس\s*در\s*ساختارهای\s*مختلف\s*بازار/u;
 const NDS_RELATION_CONNECTOR =
   /\b(?:after|before|then|followed\s+by|following|preced(?:e|es|ed)|prior\s+to|contains?|includes?|consists?\s+of|made\s+of|formed\s+by|within|parent|child|higher|lower|priority|ends?\s+with|closes?\s+with)\b|بعد(?:\s*از)?|پس\s*از|سپس|قبل\s*از|به\s*دنبال|شامل|متشکل\s*از|والد|فرزند|اولویت|پایان|بسته\s*می\s*شود/u;
 const NDS_SENTENCE_BOUNDARY = /[.!?؟؛;\n]+/u;
@@ -161,7 +163,7 @@ function hasNdsRelatedPair(sentences, leftPattern, rightPattern) {
   );
 }
 
-export function isNdsRelevantText(value) {
+export function isNdsRelevantText(value, sourceOriginType = "") {
   const text = normalizeNdsText(value);
   if (text.trim().length < NDS_MIN_SOURCE_LENGTH) return false;
   if (NDS_EXPLICIT_ANCHOR.test(text)) return true;
@@ -178,6 +180,11 @@ export function isNdsRelevantText(value) {
   const hasNdsContext = /\bnds\b/u.test(text);
   const hasMarketContext =
     /\b(?:market|price|chart|trading|candlestick|timeframe|forex|stock|instrument)\b|بازار|قیمت|نمودار|معامله|کندل|تایم‌فریم|نماد/u.test(text);
+  // The NDS Farsi source identifies Cycle Analysis, Fractal Analysis, Price
+  // Symmetry, Zero-Sum Game and Hook variants as core foundations. Permit
+  // those terms without extra relation pairs only when the source is the
+  // user-confirmed author-managed channel and the text is market-specific.
+  if (sourceOriginType === "official_telegram_channel" && NDS_FOUNDATION_TERM.test(text) && hasMarketContext) return true;
   if (relationships.filter(Boolean).length >= 2 && hasNdsContext && hasMarketContext) return true;
 
   // Ambiguous co-occurrence is not evidence of NDS. Unanchored or non-market
@@ -261,7 +268,7 @@ const KNOWLEDGE_WRITE_LOCK_LEASE_MS = 10 * 60 * 1000;
 const KNOWLEDGE_COMMIT_JOURNAL_KEY = "trainer:commit_journal";
 const MAX_KNOWLEDGE_JOURNAL_BYTES = 1024 * 1024;
 const MAX_DEFERRED_RETRIES = 5;
-export const NDS_CLASSIFIER_VERSION = "nds-classifier-v2";
+export const NDS_CLASSIFIER_VERSION = "nds-classifier-v3";
 export const NDS_GATE_VERSION = "nds-gate-v2";
 
 async function acquireKnowledgeWriteLock(env, ownerToken) {
@@ -717,9 +724,10 @@ async function runDryRun(env, channelName, fetchOnly) {
   };
   const sourcePosts = page.posts.slice(-10).map(post => ({
     sourcePostId: post.sourcePostId,
+    sourceOriginType: post.sourceOriginType,
     text: post.text.slice(0, 1600)
   }));
-  const eligiblePosts = sourcePosts.filter(post => isNdsRelevantText(post.text));
+  const eligiblePosts = sourcePosts.filter(post => isNdsRelevantText(post.text, post.sourceOriginType));
   if (!eligiblePosts.length) return {
     success: false, retrievalStatus: page.hasPosts ? "no_eligible_nds_content" : "no_posts_extracted",
     dryRun: true, persisted: false, channel: channel.name,
@@ -868,7 +876,7 @@ async function runScheduledTraining(env) {
         const batchIds = new Set(batch.map(post => String(post.sourcePostId)));
         let nextDeferred = deferredPosts.filter(item => !batchIds.has(String(item.sourcePostId)));
         const eligiblePosts = batch.filter(post => {
-          return isNdsRelevantText(post.text);
+          return isNdsRelevantText(post.text, post.sourceOriginType);
         });
         const eligibleIds = new Set(eligiblePosts.map(post => String(post.sourcePostId)));
         const ineligiblePosts = batch.filter(post => !eligibleIds.has(String(post.sourcePostId)));
