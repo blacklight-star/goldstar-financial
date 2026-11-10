@@ -1,9 +1,17 @@
 const CHANNELS = [
-  { url: "https://t.me/s/NDS4ALLVIDEOS", name: "NDS4ALLVIDEOS" },
-  { url: "https://t.me/s/fuzzylogic_nds", name: "FuzzyLogic_NDS" },
-  { url: "https://t.me/s/BNJ1I", name: "BNJ1I" },
-  { url: "https://t.me/s/cottagends", name: "cottagends" }
+  { url: "https://t.me/s/NDS4ALLVIDEOS", name: "NDS4ALLVIDEOS", sourceOriginType: "third_party_video_archive" },
+  { url: "https://t.me/s/fuzzylogic_nds", name: "FuzzyLogic_NDS", sourceOriginType: "official_telegram_channel" },
+  { url: "https://t.me/s/BNJ1I", name: "BNJ1I", sourceOriginType: "third_party_course_aggregator" },
+  { url: "https://t.me/s/cottagends", name: "cottagends", sourceOriginType: "community_repost_channel" }
 ];
+
+export function sourceOriginTypeForChannel(name) {
+  const normalized = String(name || "").trim().toLowerCase();
+  const channel = CHANNELS.find(item => item.name.toLowerCase() === normalized);
+  return channel && typeof channel.sourceOriginType === "string"
+    ? channel.sourceOriginType
+    : "unverified_telegram_source";
+}
 const ACADEMIA_PRIMARY_DOCUMENTS = [
   {
     documentId: "129627974",
@@ -115,7 +123,7 @@ const TGME_ARCHIVE_POSTS = [
 const INGESTION_SOURCES = CHANNELS.map(channel => ({
   ...channel,
   sourceType: "telegram",
-  sourceOriginType: "official_telegram_channel",
+  sourceOriginType: sourceOriginTypeForChannel(channel.name),
   sourceCaptureMethod: "telegram_public_post_html"
 }));
 const DIAGNOSTIC_CHANNELS = [
@@ -169,23 +177,9 @@ export function isNdsRelevantText(value) {
   ];
   if (relationships.filter(Boolean).length >= 2) return true;
 
-  // Preserve compact methodology summaries when the source explicitly names NDS
-  // and describes a broad set of its structural components.
-  const namedMethod =
-    /\bnds\b[\s\S]{0,45}\b(?:strategy|method|system|framework)\b|\b(?:strategy|method|system|framework)\b[\s\S]{0,45}\bnds\b|استراتژی[\s\S]{0,45}\bnds\b|روش[\s\S]{0,45}\bnds\b/u.test(text);
-  const componentFamilies = [
-    /\bnodes?\b|گره|نود/u,
-    /\bhooks?\b|هوک/u,
-    /\brall(?:y|ies)?\b|رالی/u,
-    /\bflags?\b|فلگ|لیپ/u,
-    /\bsequenc(?:e|ing)\b|توالی|سکانس/u,
-    /\bcycles?\b|چرخه|سایکل/u,
-    /\bfractals?\b|فراکتال/u,
-    /\bsymmetry\b|تقارن/u
-  ];
-  const componentCount = componentFamilies.filter(pattern => pattern.test(text)).length;
-  const structuralDescription = /\b(?:components?|elements?|structure|structural|building blocks)\b|اجزا|عناصر|ساختار|مولفه/u.test(text);
-  return namedMethod && componentCount >= 5 && structuralDescription;
+  // Ambiguous co-occurrence is not evidence of NDS. Only an explicit
+  // methodology anchor or at least two sentence-local structural relations pass.
+  return false;
 }
 
 // Immutable Preview URLs are version-specific; aliases are not DNS routes.
@@ -503,7 +497,7 @@ function parseTelegramPosts(html, channel) {
       sourcePostId, sourcePostKey: postKey, sourcePostUrl: "https://t.me/s/" + postKey,
       text: postText, links: uniqueLinks, youtubeLinks, videoUrls: uniqueVideoUrls,
       sourceCaptureMethod: "telegram_public_post_html",
-      sourceOriginType: "official_telegram_channel"
+      sourceOriginType: sourceOriginTypeForChannel(channel.name)
     });
   }
   return posts;
@@ -926,7 +920,7 @@ async function runScheduledTraining(env) {
             sourceExcerptVerified: true,
             sourcePostContentHash: await sha256Hex(post.text),
             sourceCaptureMethod: post.sourceCaptureMethod || channel.sourceCaptureMethod || "telegram_public_post_html",
-            sourceOriginType: post.sourceOriginType || channel.sourceOriginType || "official_telegram_channel",
+            sourceOriginType: post.sourceOriginType || channel.sourceOriginType || sourceOriginTypeForChannel(channel.name),
             collectedAt: new Date().toISOString(),
             validationStatus: "pending"
           };
@@ -1013,10 +1007,10 @@ export default {
           sourceExcerptHash: await sha256Hex(sourceExcerpt),
           sourcePostContentHash: await sha256Hex("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction."),
           sourceCaptureMethod: "telegram_public_post_html",
-          sourceOriginType: "official_telegram_channel",
+          sourceOriginType: sourceOriginTypeForChannel("FuzzyLogic_NDS"),
           sourceExcerptVerified: true
         };
-        sample.sourceOriginType = "official_telegram_channel";
+        sample.sourceOriginType = sourceOriginTypeForChannel("FuzzyLogic_NDS");
         sample.sourceEvidenceSignature = await signSourceEvidence(env, sample);
         return json({ ok: true, sample: sample });
       } catch (_) {
@@ -1042,7 +1036,9 @@ export default {
         nestedContentPreserved: parsed[0] && parsed[0].text.includes("nested detail and then reclaims it & confirms."),
         captionPreserved: parsed[0] && parsed[0].text.includes("Risk must be defined before entry."),
         secondPostPreserved: parsed[1] && parsed[1].text.includes("higher-timeframe confirmation"),
-        caseInsensitiveChannelSlug: lowerCaseParsed.length === 2 && lowerCaseParsed[0].sourcePostUrl === "https://t.me/s/FuzzyLogic_NDS/125"
+        caseInsensitiveChannelSlug: lowerCaseParsed.length === 2 && lowerCaseParsed[0].sourcePostUrl === "https://t.me/s/FuzzyLogic_NDS/125",
+        thirdPartyOriginPreserved: parsed[0] && parsed[0].sourceOriginType === "third_party_video_archive",
+        OfficialOriginPreserved: lowerCaseParsed[0] && lowerCaseParsed[0].sourceOriginType === "official_telegram_channel"
       };
       return json({ success: Object.values(checks).every(Boolean), checks, parsed });
     }
@@ -1063,6 +1059,7 @@ export default {
           const page = await readChannel(env, channel);
           return {
             channel: channel.name,
+            sourceOriginType: sourceOriginTypeForChannel(channel.name),
             sourceRole: channel.diagnosticOnly ? "diagnostic_only" : "configured_source",
             success: page.hasPosts,
             retrievalStatus: page.hasPosts ? "posts_extracted" : "no_posts_extracted",
@@ -1074,6 +1071,7 @@ export default {
         } catch (error) {
           return {
             channel: channel.name,
+            sourceOriginType: sourceOriginTypeForChannel(channel.name),
             sourceRole: channel.diagnosticOnly ? "diagnostic_only" : "configured_source",
             success: false,
             retrievalStatus: "fetch_error",
