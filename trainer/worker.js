@@ -175,10 +175,13 @@ export function isNdsRelevantText(value) {
     hasNdsRelatedPair(sentences, /\brall(?:y|ies)\b|رالی/u, /\bdrops?\b|دراپ/u),
     hasNdsRelatedPair(sentences, /\bnodes?\b|گره|نود/u, /\b(?:parent|child|priority|higher|lower|sub-?node)\b|والد|فرزند|اولویت/u)
   ];
-  if (relationships.filter(Boolean).length >= 2) return true;
+  const hasNdsContext = /\\bnds\\b/u.test(text);
+  const hasMarketContext =
+    /\\b(?:market|price|chart|trading|candlestick|timeframe|forex|stock|instrument)\\b|بازار|قیمت|نمودار|معامله|کندل|تایم‌فریم|نماد/u.test(text);
+  if (relationships.filter(Boolean).length >= 2 && hasNdsContext && hasMarketContext) return true;
 
-  // Ambiguous co-occurrence is not evidence of NDS. Only an explicit
-  // methodology anchor or at least two sentence-local structural relations pass.
+  // Ambiguous co-occurrence is not evidence of NDS. Unanchored or non-market
+  // structural text stays deferred for review rather than entering extraction.
   return false;
 }
 
@@ -1038,7 +1041,7 @@ export default {
         secondPostPreserved: parsed[1] && parsed[1].text.includes("higher-timeframe confirmation"),
         caseInsensitiveChannelSlug: lowerCaseParsed.length === 2 && lowerCaseParsed[0].sourcePostUrl === "https://t.me/s/FuzzyLogic_NDS/125",
         thirdPartyOriginPreserved: parsed[0] && parsed[0].sourceOriginType === "third_party_video_archive",
-        OfficialOriginPreserved: lowerCaseParsed[0] && lowerCaseParsed[0].sourceOriginType === "official_telegram_channel"
+        officialOriginPreserved: lowerCaseParsed[0] && lowerCaseParsed[0].sourceOriginType === "official_telegram_channel"
       };
       return json({ success: Object.values(checks).every(Boolean), checks, parsed });
     }
