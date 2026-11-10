@@ -1,7 +1,7 @@
 import test from "node:test";
 import { createHmac } from "node:crypto";
 import assert from "node:assert/strict";
-import worker, { isNdsRelevantText, signSourceEvidence, renewKnowledgeWriteLock, recoverPendingKnowledgeCommit, persistKnowledgeCommit, isDeferredRetryDue, buildDeferredRecord } from "./worker.js";
+import worker, { isNdsRelevantText, signSourceEvidence, renewKnowledgeWriteLock, recoverPendingKnowledgeCommit, persistKnowledgeCommit, isDeferredRetryDue, buildDeferredRecord, sourceOriginTypeForChannel } from "./worker.js";
 
 test("health reports staging scheduler paused", async () => {
   const response = await worker.fetch(new Request("https://trainer.example/health"), {}, {});
@@ -302,9 +302,10 @@ test("rejects short titles even when they contain NDS terminology", () => {
   assert.equal(isNdsRelevantText("NDS 123Flag Hook"), false);
 });
 
-test("accepts explicit NDS methodology anchors", () => {
-  assert.equal(isNdsRelevantText(long("Nodal Displacement Sequencing explains the market cycle and its node sequence.")), true);
+test("accepts explicit NDS anchors only with a distinctive pattern or linked methodology structure", () => {
+  assert.equal(isNdsRelevantText(long("Nodal Displacement Sequencing describes how the Hook precedes the Rally and the Flag follows the Rally in a market cycle.")), true);
   assert.equal(isNdsRelevantText(long("A 123Flag forms after the Hook-Hook-Rally sequence and a low-volume spike.")), true);
+  assert.equal(isNdsRelevantText(long("Nodal Displacement Sequencing is named in this generic glossary without any rule structure or relationships.")), false);
 });
 
 test("rejects lexical co-occurrence without NDS relationships", () => {
@@ -312,22 +313,26 @@ test("rejects lexical co-occurrence without NDS relationships", () => {
   assert.equal(isNdsRelevantText(long("A rally follows a resistance break, while a flag appears near a fractal support zone and a symmetry level.")), false);
 });
 
-test("accepts linked NDS structural relationships", () => {
-  assert.equal(isNdsRelevantText(long("The Hook contains three Nodes, then the next Rally follows the completed Hook structure and the sequence ends with a Flag.")), true);
-  assert.equal(isNdsRelevantText(long("The parent Node defines the child Node priority; the Hook then precedes the Rally before the Flag closes the cycle.")), true);
+test("accepts linked structural relationships when the full NDS methodology is named", () => {
+  assert.equal(isNdsRelevantText(long("Nodal Displacement Sequencing: the Hook contains three Nodes, then the next Rally follows the completed Hook structure and the sequence ends with a Flag.")), true);
+  assert.equal(isNdsRelevantText(long("Nodal Displacement Sequencing: the parent Node defines the child Node priority; the Hook then precedes the Rally before the Flag closes the cycle.")), true);
 });
 
-test("accepts Persian NDS relationships after Unicode and digit normalization", () => {
-  assert.equal(isNdsRelevantText(long("در ساختار NDS، هوک پس از تشکیل گره‌ها شکل می‌گیرد؛ سپس رالی ایجاد می‌شود و پس از آن فلگ پایان چرخه را مشخص می‌کند.")), true);
-  assert.equal(isNdsRelevantText(long("در این روش، گره والد اولویت گره فرزند را تعیین می‌کند و هوک پس از آن به رالی منتهی می‌شود.")), true);
+test("accepts Persian NDS relationships when the full methodology name is present", () => {
+  assert.equal(isNdsRelevantText(long("در روش Nodal Displacement Sequencing، هوک پس از تشکیل گره‌ها می‌آید؛ سپس رالی شکل می‌گیرد و در پایان فلگ چرخه را می‌بندد.")), true);
+  assert.equal(isNdsRelevantText(long("در روش Nodal Displacement Sequencing، گره والد اولویت گره فرزند را تعیین می‌کند و هوک پس از آن به رالی منتهی می‌شود.")), true);
 });
 
 test("rejects generic ICT vocabulary padded with NDS-like words", () => {
   assert.equal(isNdsRelevantText(long("Liquidity and order blocks are discussed with Nodes, Flags, Rally, Sequence and Fractal terms, but no structural NDS relationship is described.")), false);
 });
 
-test("accepts Persian NDS terminology", () => {
-  assert.equal(isNdsRelevantText(long("در استراتژی NDS، هوک، رالی، فلگ، سکانس، گره و تقارن اجزای ساختار چرخه هستند.")), true);
+test("rejects software architecture that uses the NDS acronym and multiple generic structural relations", () => {
+  assert.equal(isNdsRelevantText(long("The NDS strategy for software architecture models nodes that contain hooks; event flags follow each rally; sequence nodes have parent-child priority and callbacks close a cycle. These are generic graph components, event handlers and test-run labels, not a named trading methodology.")), false);
+});
+
+test("accepts Persian NDS terminology with the named methodology and structural relations", () => {
+  assert.equal(isNdsRelevantText(long("در روش Nodal Displacement Sequencing، هوک پس از گره شکل می‌گیرد؛ رالی بعد از هوک می‌آید و فلگ چرخه را می‌بندد.")), true);
 });
 
 test("does not reject an NDS post merely because it also mentions ICT terms", () => {
@@ -778,4 +783,13 @@ test("TG.ME archive rejects an individual post redirected outside its exact arch
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("Telegram source provenance is conservative and only owner-confirmed origin is official", () => {
+  assert.equal(sourceOriginTypeForChannel("FuzzyLogic_NDS"), "official_telegram_channel");
+  assert.equal(sourceOriginTypeForChannel("NDS4ALLVIDEOS"), "unverified_telegram_source");
+  assert.equal(sourceOriginTypeForChannel("BNJ1I"), "unverified_telegram_source");
+  assert.equal(sourceOriginTypeForChannel("cottagends"), "unverified_telegram_source");
+  assert.equal(sourceOriginTypeForChannel("unknown-channel"), "unverified_telegram_source");
 });
