@@ -394,6 +394,32 @@ test("approval fails closed if either pending or active KV read fails", async ()
   }
 });
 
+test("malformed JSON in any knowledge KV namespace fails closed instead of appearing empty", async () => {
+  for (const key of ["knowledge_ICT", "knowledge_RTM", "knowledge_NDS"]) {
+    const state = makeEnv({ otherKnowledge: { [key]: "{" } });
+    const response = await worker.fetch(makeRequest("/knowledge/NDS", undefined, {
+      "X-API-Key": "general-api-key"
+    }), state.env, ctx);
+    assert.equal(response.status, 500, key);
+  }
+});
+
+test("approval fails closed when pending or active KV JSON is malformed", async () => {
+  const rule = evidenceRule();
+  const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
+  for (const key of ["knowledge_NDS_pending", "knowledge_NDS"]) {
+    const state = makeEnv({ pending: [rule], otherKnowledge: { [key]: "{" } });
+    const pendingBefore = state.KNOWLEDGE.values.get("knowledge_NDS_pending");
+    const activeBefore = state.KNOWLEDGE.values.get("knowledge_NDS");
+    const response = await worker.fetch(makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), headers), state.env, ctx);
+    assert.equal(response.status, 500, key);
+    assert.equal(state.DB.rows.size, 0);
+    assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS_pending"), pendingBefore);
+    assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS"), activeBefore);
+    assert.equal(state.DB.locks.size, 0);
+  }
+});
+
 test("source evidence HMAC is mandatory and tamper-evident", async () => {
   const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
   const valid = evidenceRule();
