@@ -23,14 +23,16 @@ const NDS_PRIMARY_AUTHOR_DOCUMENTS = new Map([
   }],
   ["129628090", {
     path: "/129628090/NDS_farsi",
-    sourceOriginType: "primary_author_published_source",
+    sourceOriginType: "third_party_course_compilation",
     sourceCaptureMethod: "academia_account_pdf_download",
-    role: "primary_core_methodology"
+    expectedDocumentSha256: "50575a4f99a9f623c3ac2b3cf06b97d07d06bdb6b5cfed57778406d46297f4b9",
+    role: "supporting_course_compilation"
   }],
   ["122576333", {
     path: "/122576333/Nodal_Displacement_Sequencing_NDS_New_Approach",
     sourceOriginType: "primary_author_published_source",
     sourceCaptureMethod: "academia_account_pdf_download",
+    expectedDocumentSha256: "65ab04fded0d3f3c77d8c45a1a2a2cb8dca34d9a8dd9b2f37a3b26a0f9c0b6e4",
     role: "primary_author_supplement"
   }],
   ["122966805", {
@@ -273,14 +275,16 @@ async function hasVerifiedRuleEvidence(rule, env) {
         return false;
       }
     } else if (captureMethod === "academia_account_pdf_download" &&
-        originType === "primary_author_published_source") {
+        (originType === "primary_author_published_source" || originType === "third_party_course_compilation")) {
       var authorDoc = NDS_PRIMARY_AUTHOR_DOCUMENTS.get(sourcePostId);
       if (!authorDoc || !["academia.edu", "www.academia.edu"].includes(sourceUrl.hostname) ||
           sourceUrl.pathname.replace(/\/$/, "") !== authorDoc.path ||
           authorDoc.sourceOriginType !== originType ||
           authorDoc.sourceCaptureMethod !== captureMethod) return false;
+      const documentSha256 = String(rule.sourceDocumentSha256 || "").toLowerCase();
       if (String(rule.sourceDocumentFormat || "") !== "application/pdf" ||
-          !/^[a-f0-9]{64}$/.test(String(rule.sourceDocumentSha256 || "").toLowerCase())) return false;
+          !/^[a-f0-9]{64}$/.test(documentSha256)) return false;
+      if (authorDoc.expectedDocumentSha256 && documentSha256 !== authorDoc.expectedDocumentSha256) return false;
     } else {
       return false;
     }
