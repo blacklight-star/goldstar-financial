@@ -326,6 +326,21 @@ test("rejects generic ICT vocabulary padded with NDS-like words", () => {
   assert.equal(isNdsRelevantText(long("Liquidity and order blocks are discussed with Nodes, Flags, Rally, Sequence and Fractal terms, but no structural NDS relationship is described.")), false);
 });
 
+test("accepts core NDS foundation sections from the author-managed source", () => {
+  const official = sourceOriginTypeForChannel("FuzzyLogic_NDS");
+  const foundationPosts = [
+    "Cycle Analysis describes recurring cycles in the financial market and their life span.",
+    "Price Symmetry measures the length of price waves and compares retracement legs on the chart.",
+    "Fractal Analysis explains how smaller market cycles open and close inside larger cycles.",
+    "Zero-Sum Game is presented as a mathematical foundation for trading in financial markets."
+  ];
+  for (const post of foundationPosts) assert.equal(isNdsRelevantText(long(post), official), true, post);
+});
+
+test("does not accept generic NDS foundation vocabulary from an unverified source without structural evidence", () => {
+  assert.equal(isNdsRelevantText(long("Cycle Analysis describes recurring cycles in the financial market and their life span."), "unverified_telegram_source"), false);
+});
+
 test("rejects Persian NDS acronym plus generic component vocabulary without relationships", () => {
   assert.equal(isNdsRelevantText(long("در استراتژی NDS برای معماری نرم‌افزار، Node و Hook و Flag و Rally و Sequence و Fractal و Symmetry فقط نام اجزای گراف، callbackها و وضعیت‌های برنامه هستند و هیچ رابطه ساختاری از روش معاملاتی را توضیح نمی‌دهند.")), false);
 });
