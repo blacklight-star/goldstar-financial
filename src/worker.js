@@ -28,6 +28,13 @@ const NDS_PRIMARY_AUTHOR_DOCUMENTS = new Map([
     expectedDocumentSha256: "50575a4f99a9f623c3ac2b3cf06b97d07d06bdb6b5cfed57778406d46297f4b9",
     role: "supporting_course_compilation"
   }],
+  ["129612067", {
+    path: "/129612067/Nodal_Displacement_Sequencing_A_Multifractal_Framework_for_Hierarchical_Market_Cycle_Analysis",
+    sourceOriginType: "primary_author_published_source",
+    sourceCaptureMethod: "academia_account_pdf_download",
+    expectedDocumentSha256: "9b72b67b77f4f6b99e04b6f22f5f3b56b3d8c2dbeea8d4b4b3f84d62c9f7a4d2",
+    role: "primary_author_supplement"
+  }],
   ["122576333", {
     path: "/122576333/Nodal_Displacement_Sequencing_NDS_New_Approach",
     sourceOriginType: "primary_author_published_source",
