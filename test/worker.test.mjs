@@ -365,11 +365,13 @@ test("MQL5 proxy bounds request size and returns 4xx validation statuses", async
 });
 
 test("all knowledge and strategy read failures fail closed instead of reporting empty state", async () => {
-  const knowledgeState = makeEnv({ kvOptions: { failGetKeys: ["knowledge_NDS"] } });
-  const knowledgeResponse = await worker.fetch(makeRequest("/knowledge/NDS", undefined, {
-    "X-API-Key": "general-api-key"
-  }), knowledgeState.env, ctx);
-  assert.equal(knowledgeResponse.status, 500);
+  for (const key of ["knowledge_ICT", "knowledge_RTM", "knowledge_NDS"]) {
+    const knowledgeState = makeEnv({ kvOptions: { failGetKeys: [key] } });
+    const knowledgeResponse = await worker.fetch(makeRequest("/knowledge/NDS", undefined, {
+      "X-API-Key": "general-api-key"
+    }), knowledgeState.env, ctx);
+    assert.equal(knowledgeResponse.status, 500, key);
+  }
 
   const strategyState = makeEnv({ strategyKvOptions: { failGetKeys: ["current_strategy"] } });
   const strategyResponse = await worker.fetch(makeRequest("/strategy", undefined, {
