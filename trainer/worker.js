@@ -388,6 +388,29 @@ export async function signSourceEvidence(env, rule) {
   if (!env || typeof env.NDS_EVIDENCE_HMAC_KEY !== "string" || env.NDS_EVIDENCE_HMAC_KEY.length < 32) {
     throw new Error("NDS evidence signing key unavailable; candidate cannot be persisted");
   }
+  if (String(rule && rule.sourceCaptureMethod || "") === "telegram_public_post_html") {
+    const sourcePostText = String(rule.sourcePostText || "");
+    const sourceExcerpt = String(rule.sourceExcerpt || "").trim();
+    const sourcePostId = String(rule.sourcePostId || "").trim();
+    const sourceExcerptHash = String(rule.sourceExcerptHash || "").toLowerCase();
+    const sourcePostContentHash = String(rule.sourcePostContentHash || "").toLowerCase();
+    let sourceUrl;
+    try { sourceUrl = new URL(String(rule.sourcePostUrl || "")); }
+    catch { throw new Error("Telegram source evidence failed content/provenance validation"); }
+    const match = sourceUrl.protocol === "https:" && sourceUrl.hostname === "t.me"
+      ? sourceUrl.pathname.match(/^\/s\/([A-Za-z0-9_]+)\/(\d+)$/)
+      : null;
+    const channel = match && CHANNELS.find(item => item.name.toLowerCase() === match[1].toLowerCase());
+    if (!match || !channel || match[2] !== sourcePostId ||
+        sourceExcerpt.length < 40 || sourceExcerpt.length > 2000 ||
+        sourcePostText.length < sourceExcerpt.length || sourcePostText.length > 12000 ||
+        !sourcePostText.includes(sourceExcerpt) ||
+        await sha256Hex(sourceExcerpt) !== sourceExcerptHash ||
+        await sha256Hex(sourcePostText) !== sourcePostContentHash ||
+        rule.sourceOriginType !== channel.sourceOriginType) {
+      throw new Error("Telegram source evidence failed content/provenance validation");
+    }
+  }
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(env.NDS_EVIDENCE_HMAC_KEY),
     { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
@@ -887,6 +910,7 @@ async function runScheduledTraining(env) {
             sourcePostId: post.sourcePostId,
             sourcePostUrl: post.sourcePostUrl,
             sourceExcerpt: excerpt,
+            sourcePostText: post.text,
             sourceExcerptHash: await sha256Hex(excerpt),
             sourceExcerptVerified: true,
             sourcePostContentHash: await sha256Hex(post.text),
@@ -964,6 +988,7 @@ export default {
     if (url.pathname === "/__preview/hmac-sample" && request.method === "GET" && isAllowedPreviewHost(url)) {
       try {
         const sourceExcerpt = "Preview-only NDS HMAC parity fixture: Hook precedes Rally, and the Flag follows the Rally.";
+        const sourcePostText = "Official FuzzyLogic_NDS NDS method sample: " + sourceExcerpt + " Additional source context for the fixed HMAC interoperability test.";
         const sample = {
           id: "nds-preview-hmac-parity-v1",
           validationStatus: "pending",
@@ -973,10 +998,11 @@ export default {
           conditions: ["Hook precedes Rally", "Rally precedes Flag"],
           priority: 5,
           sourcePostId: "987654321",
-          sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/987654321",
+          sourcePostUrl: "https://t.me/s/FuzzyLogic_NDS/987654321",
           sourceExcerpt,
+          sourcePostText,
           sourceExcerptHash: await sha256Hex(sourceExcerpt),
-          sourcePostContentHash: await sha256Hex("Preview-only full source body for the deterministic HMAC interoperability test; no trading instruction."),
+          sourcePostContentHash: await sha256Hex(sourcePostText),
           sourceCaptureMethod: "telegram_public_post_html",
           sourceOriginType: "official_telegram_channel",
           sourceExcerptVerified: true
