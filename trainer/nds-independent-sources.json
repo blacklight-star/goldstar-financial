@@ -1,8 +1,9 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-09",
+  "updatedAt": "2026-11-11",
   "policy": {
     "authorityOrder": [
+      "academia_profile_listed_source",
       "primary_author_published_source",
       "official_telegram_channel",
       "third_party_telegram_archive"
@@ -38,22 +39,34 @@
     },
     {
       "id": "academia-nds-farsi",
-      "title": "NDS farsi",
-      "author": "Dr. Iraj Jafarian",
+      "title": "Nodal Displacement Sequencing",
+      "author": "Role attribution not resolved; see platformListingAttribution and documentInternalCredits.",
       "platform": "Academia.edu",
       "documentId": "129628090",
       "canonicalUrl": "https://www.academia.edu/129628090/NDS_farsi",
-      "sourceOriginType": "primary_author_published_source",
+      "sourceOriginType": "academia_profile_listed_source",
       "sourceCaptureMethod": "academia_account_pdf_download",
-      "sourceRole": "primary_core_methodology",
+      "sourceRole": "primary_core_methodology_source_with_role_attribution_notes",
       "status": "primary_source_manual_download_pending",
       "authorityTier": "primary",
       "format": "application/pdf",
       "acquisitionMode": "user_initiated_first_party_download",
       "automatedSiteAccessAllowed": false,
       "availableForManualImport": true,
-      "provenanceBasis": "Listed under Papers by Dr Iraj Jafarian; its profile description explicitly states NDS was designed by Dr Iraj Jafarian.",
-      "nextStep": "Manual PDF acquisition using the owner's existing free Academia account, then controlled document import."
+      "provenanceBasis": "The document is listed under Dr. Iraj Jafarian's Academia profile. Its own cover (p.1), FAQ (p.114) and final credits (p.124) distinguish model attribution, supervision, and preparation/writing/graphic-design roles. Preserve each statement separately; do not infer sole authorship of the PDF.",
+      "nextStep": "Manual PDF acquisition using the owner's existing free Academia account, then controlled document import.",
+      "fileName": "NDS_farsi-libre.pdf",
+      "platformListingTitle": "NDS farsi",
+      "platformListingAttribution": "Dr. Iraj Jafarian (Academia profile/listing metadata; not independently reconciled with internal PDF credits).",
+      "documentInternalCredits": {
+        "preparerWriterGraphicDesigner": "M3hRd4Di (PDF page 124)",
+        "supervisingProfessorAcknowledged": "Dr. Fuzzy Logic (PDF page 124)"
+      },
+      "coverAttribution": "Dr. Fuzzy Logic (PDF page 1)",
+      "sourceClaims": {
+        "discoveryAndModelDesign": "PDF page 114 attributes NDS discovery and mathematical model design to Dr. Fuzzy Logic; source assertion only, not independent verification."
+      },
+      "provenanceStatus": "roles_separated_not_independently_reconciled"
     },
     {
       "id": "academia-nds-money-management",
