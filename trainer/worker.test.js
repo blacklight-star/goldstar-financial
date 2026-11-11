@@ -1,5 +1,5 @@
 import test from "node:test";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import assert from "node:assert/strict";
 import worker, { isNdsRelevantText, signSourceEvidence, renewKnowledgeWriteLock, recoverPendingKnowledgeCommit, persistKnowledgeCommit, isDeferredRetryDue, buildDeferredRecord, sourceOriginTypeForChannel } from "./worker.js";
 
@@ -163,6 +163,8 @@ test("candidate preview hostname can access the fetch-only parser diagnostics", 
 });
 
 test("Trainer signs exact source evidence with the shared HMAC key", async () => {
+  const sourceExcerpt = "A completed positive NDS cycle requires two hooks and two rallies before the flag.";
+  const sourcePostText = "Official FuzzyLogic_NDS training content: " + sourceExcerpt + " The source post includes the full structural explanation.";
   const rule = {
     id: "nds_test",
     contentType: "trading_rule",
@@ -171,9 +173,11 @@ test("Trainer signs exact source evidence with the shared HMAC key", async () =>
     conditions: ["Two hooks and two rallies precede the flag."],
     priority: 1,
     sourcePostId: "123",
-    sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123",
-    sourceExcerptHash: "a".repeat(64),
-    sourcePostContentHash: "b".repeat(64),
+    sourcePostUrl: "https://t.me/s/FuzzyLogic_NDS/123",
+    sourceExcerpt,
+    sourcePostText,
+    sourceExcerptHash: createHash("sha256").update(sourceExcerpt).digest("hex"),
+    sourcePostContentHash: createHash("sha256").update(sourcePostText).digest("hex"),
     sourceCaptureMethod: "telegram_public_post_html",
     sourceOriginType: "official_telegram_channel",
     sourceExcerptVerified: true
@@ -207,6 +211,54 @@ test("Trainer signs exact source evidence with the shared HMAC key", async () =>
     const alteredSignature = await signSourceEvidence({ NDS_EVIDENCE_HMAC_KEY: secret }, altered);
     assert.notEqual(alteredSignature, signature);
   }
+});
+
+test("Trainer refuses to sign Telegram evidence when the excerpt, source hash or channel provenance does not match", async () => {
+  const sourceExcerpt = "A completed positive NDS cycle requires two hooks and two rallies before the flag.";
+  const sourcePostText = "Official FuzzyLogic_NDS training content: " + sourceExcerpt + " The source post includes the full structural explanation.";
+  const baseRule = {
+    id: "nds_test",
+    contentType: "trading_rule",
+    category: "cycle",
+    rule: "A completed cycle requires two hooks and two rallies.",
+    conditions: ["Two hooks and two rallies precede the flag."],
+    priority: 1,
+    sourcePostId: "123",
+    sourcePostUrl: "https://t.me/s/FuzzyLogic_NDS/123",
+    sourceExcerpt,
+    sourcePostText,
+    sourceExcerptHash: createHash("sha256").update(sourceExcerpt).digest("hex"),
+    sourcePostContentHash: createHash("sha256").update(sourcePostText).digest("hex"),
+    sourceCaptureMethod: "telegram_public_post_html",
+    sourceOriginType: "official_telegram_channel",
+    sourceExcerptVerified: true
+  };
+  const secret = "unit-test-nds-evidence-key-32-bytes-minimum";
+  const excerptMissing = "A different captured Telegram post with enough text but without the quoted NDS excerpt.";
+  await assert.rejects(
+    signSourceEvidence({
+      NDS_EVIDENCE_HMAC_KEY: secret
+    }, {
+      ...baseRule,
+      sourcePostText: excerptMissing,
+      sourcePostContentHash: createHash("sha256").update(excerptMissing).digest("hex")
+    }),
+    /content\/provenance/
+  );
+  await assert.rejects(
+    signSourceEvidence({ NDS_EVIDENCE_HMAC_KEY: secret }, {
+      ...baseRule,
+      sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123"
+    }),
+    /content\/provenance/
+  );
+  await assert.rejects(
+    signSourceEvidence({ NDS_EVIDENCE_HMAC_KEY: secret }, {
+      ...baseRule,
+      sourceOriginType: "third_party_video_archive"
+    }),
+    /content\/provenance/
+  );
 });
 
 test("scheduled training refuses to run or write candidates without the signing key", async () => {
