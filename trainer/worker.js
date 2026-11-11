@@ -31,8 +31,8 @@ const ACADEMIA_PRIMARY_DOCUMENTS = [
     title: "Nodal Displacement Sequencing",
     fileName: "NDS_farsi-libre.pdf",
     platformListingTitle: "NDS farsi",
-    author: "Platform listing attribution: Dr. Iraj Jafarian; PDF internal credits: M3hRd4Di (preparer, writer, graphic designer) and Dr. Fuzzy Logic (supervising professor). Roles are not independently reconciled.",
-    internalCredits: {
+    author: "Role attribution not resolved; see platformListingAttribution and documentInternalCredits.",
+    documentInternalCredits: {
       preparerWriterGraphicDesigner: "M3hRd4Di (PDF page 124)",
       supervisingProfessorAcknowledged: "Dr. Fuzzy Logic (PDF page 124)"
     },
@@ -41,13 +41,13 @@ const ACADEMIA_PRIMARY_DOCUMENTS = [
     sourceClaims: {
       discoveryAndModelDesign: "PDF page 114 attributes discovery and mathematical model design to Dr. Fuzzy Logic; this remains a source assertion, not independent verification."
     },
-    provenanceStatus: "role_attribution_separated_unverified",
+    provenanceStatus: "roles_separated_not_independently_reconciled",
     url: "https://www.academia.edu/129628090/NDS_farsi",
     authorityTier: "primary",
     authorityTierNote: "Primary methodology source classification; not a finding about document authorship.",
-    sourceOriginType: "academia_listed_source_with_document_role_attributions",
+    sourceOriginType: "academia_profile_listed_source",
     sourceCaptureMethod: "academia_account_pdf_download",
-    sourceRole: "primary_core_methodology_source_roles_recorded_separately",
+    sourceRole: "primary_core_methodology_source_with_role_attribution_notes",
     format: "application/pdf",
     acquisitionMode: "user_initiated_first_party_download",
     automatedSiteAccessAllowed: false,
