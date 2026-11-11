@@ -122,7 +122,7 @@ const NDS_MIN_SOURCE_LENGTH = 120;
 const NDS_EXPLICIT_ANCHOR =
   /\bnodal\s+displacement\s+sequencing\b|\b123\s*[-_ ]?\s*flag\b|\bhook\s*[-–—>→]+\s*hook\s*[-–—>→]+\s*rall(?:y|ies)\b|هوک\s*[-–—>→]+\s*هوک\s*[-–—>→]+\s*رالی/u;
 const NDS_RELATION_CONNECTOR =
-  /\b(?:after|before|then|followed\s+by|following|preced(?:e|es|ed)|prior\s+to|contains?|includes?|consists?\s+of|made\s+of|formed\s+by|within|parent|child|higher|lower|priority|ends?\s+with|closes?\s+with)\b|بعد(?:\s*از)?|پس\s*از|سپس|قبل\s*از|به\s*دنبال|شامل|متشکل\s*از|والد|فرزند|اولویت|پایان|بسته\s*می\s*شود/u;
+  /\b(?:after|before|then|followed\s+by|following|preced(?:e|es|ed)|prior\s+to|contains?|includes?|consists?\s+of|made\s+of|formed\s+by|within|parent|child|higher|lower|priority|ends?\s+with|closes?\s+with)\b|بعد(?:\s*از)?|پس\s*از|سپس|قبل\s*از|به\s*دنبال|شامل|متشکل\s*از|والد|فرزند|اولویت|بالاتر(?:\s*از)?|پایین[‌\s]*تر(?:\s*از)?|پایان|بسته\s*می\s*شود/u;
 const NDS_SENTENCE_BOUNDARY = /[.!?؟؛;\n]+/u;
 
 function normalizeNdsText(value) {
@@ -143,19 +143,51 @@ function hasNdsRelatedPair(sentences, leftPattern, rightPattern) {
   );
 }
 
+function adjacentNdsContexts(sentences) {
+  return sentences.map((sentence, index) =>
+    [sentence, sentences[index + 1] || ""].filter(Boolean).join(" ")
+  );
+}
+
+function hasNdsNodeSequence(sentences) {
+  return adjacentNdsContexts(sentences).some(context =>
+    /\bnds\b/u.test(context) &&
+    /\b(?:n[123]|s[123])\b/u.test(context) &&
+    /\bnode(?:s|ها)?(?=\s|[^\p{L}])|گره|نود/u.test(context) &&
+    /(?:higher|lower|above|below|بالاتر|پایین[‌\s]*تر)/u.test(context) &&
+    /(?:price|market|قیمت|بازار)/u.test(context) &&
+    /(?:peaks?|valleys?|قله|دره)/u.test(context)
+  );
+}
+
+function hasNdsCoreSequence(sentences) {
+  return adjacentNdsContexts(sentences).some(context =>
+    /\bnds\b/u.test(context) &&
+    /\bnode(?:s|ها)?(?=\s|[^\p{L}])|گره|نود/u.test(context) &&
+    /\b123\b/u.test(context) &&
+    /(?:sequence|sequencing|توالی|سکانس|ترتیب)/u.test(context) &&
+    /(?:price|market|قیمت|بازار)/u.test(context) &&
+    /(?:cycle|fractal|symmetry|zero[- ]sum|چرخه|فراکتال|تقارن|مجموع[‌\s-]*صفر)/u.test(context)
+  );
+}
+
 export function isNdsRelevantText(value) {
   const text = normalizeNdsText(value);
   if (text.trim().length < NDS_MIN_SOURCE_LENGTH) return false;
   if (NDS_EXPLICIT_ANCHOR.test(text)) return true;
 
   const sentences = text.split(NDS_SENTENCE_BOUNDARY).map(sentence => sentence.trim()).filter(Boolean);
+  // A tightly constrained NDS core-sequence signature covers primary-source
+  // Node/123/Sequencing material without accepting generic component vocabulary.
+  if (hasNdsCoreSequence(sentences)) return true;
   const relationships = [
     hasNdsRelatedPair(sentences, /\bhooks?\b|هوک/u, /\bnodes?\b|گره|نود/u),
     hasNdsRelatedPair(sentences, /\bhooks?\b|هوک/u, /\brall(?:y|ies)\b|رالی/u),
     hasNdsRelatedPair(sentences, /\brall(?:y|ies)\b|رالی/u, /\bflags?\b|فلگ/u),
     hasNdsRelatedPair(sentences, /\bflags?\b|فلگ/u, /\blip\b|لیپ/u),
     hasNdsRelatedPair(sentences, /\brall(?:y|ies)\b|رالی/u, /\bdrops?\b|دراپ/u),
-    hasNdsRelatedPair(sentences, /\bnodes?\b|گره|نود/u, /\b(?:parent|child|priority|higher|lower|sub-?node)\b|والد|فرزند|اولویت/u)
+    hasNdsRelatedPair(sentences, /\bnode(?:s|ها)?(?=\s|[^\p{L}])|گره|نود/u, /\b(?:parent|child|priority|higher|lower|sub-?node)\b|والد|فرزند|اولویت|بالاتر|پایین[‌\s]*تر/u),
+    hasNdsNodeSequence(sentences)
   ];
   if (relationships.filter(Boolean).length >= 2) return true;
 
