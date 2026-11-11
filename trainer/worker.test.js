@@ -119,6 +119,70 @@ test("does not reject an NDS post merely because it also mentions ICT terms", ()
   assert.equal(isNdsRelevantText(long("NDS Hook and Flag sequencing is distinct from an order block or liquidity sweep; the 123Flag remains the entry structure.")), true);
 });
 
+test("source-grounded NDS classifier fixtures meet explicit precision and recall acceptance criteria", () => {
+  const fixtures = [
+    {
+      label: true,
+      source: "NDS_farsi-libre.pdf p.11",
+      text: "در تعریف نودهای NDS، Node N2 بالاتر از Node N1 تشکیل می‌شود و Node N3 بالاتر از N2 است؛ سپس قیمت پس از N3 ریزش می‌کند و ترتیب نودهای قله و دره در بازار شماره‌گذاری می‌شود."
+    },
+    {
+      label: true,
+      source: "NDS_farsi-libre.pdf p.13",
+      text: "در NDS، سکانس Nodeها در چرخه بازار بر اصل توالی 123 استوار است؛ Cycle Analysis و Fractal Analysis ساختارهای کوچک‌تر را به چرخه بزرگ‌تر پیوند می‌دهند و ترتیب Nodeها نقض نمی‌شود."
+    },
+    {
+      label: true,
+      source: "NDS_Strategy_English_Version.pdf p.25",
+      text: "A positive NDS cycle consists of two consecutive Hook patterns followed by two Rally patterns and a Flag; after the Flag, price drops to close the cycle at the terminal point. The sequence describes the internal structure rather than a generic market-cycle label."
+    },
+    {
+      label: true,
+      source: "NDS_Strategy_English_Version.pdf p.32",
+      text: "Nodal Displacement Sequencing uses fractal analysis: smaller self-similar market patterns combine into larger structures across timeframes, while the higher timeframe influences the lower timeframe and the node sequence remains structurally related."
+    },
+    {
+      label: false,
+      source: "NDS_farsi-libre.pdf p.14",
+      text: "The natural water cycle repeats when sunlight evaporates water, vapor condenses into clouds, rainfall returns water to land and rivers, and some water flows back to the sea. These stages describe weather and hydrology, not a trading methodology."
+    },
+    {
+      label: false,
+      source: "NDS_farsi-libre.pdf p.15",
+      text: "Financial markets contain repeating cycles whose shapes vary with price, time and trading volume. This description discusses general market periodicity only and does not define nodes, hooks, rallies, flags or any NDS sequencing relationship."
+    },
+    {
+      label: false,
+      source: "hostile software architecture fixture",
+      text: "The NDS strategy for software architecture describes components and structure. Nodes, hooks, flags, rally, sequence, cycles, fractals and symmetry are names for graph components, event callbacks, state flags and repeated test runs."
+    },
+    {
+      label: false,
+      source: "hostile numbered graph fixture",
+      text: "The NDS graph subsystem labels software nodes N1, N2 and N3 and describes higher and lower node priority in a dependency graph. The paragraph describes software dependencies only."
+    },
+    {
+      label: false,
+      source: "hostile NDS schema fixture",
+      text: "The NDS schema assigns node IDs N1, N2 and 123 to software components and describes their sequence in a graph. Market and price are field names in the unrelated database schema, not trading concepts."
+    }
+  ];
+  const confusion = { tp: 0, fp: 0, tn: 0, fn: 0 };
+  for (const fixture of fixtures) {
+    assert.ok(fixture.text.length >= NDS_MIN_SOURCE_LENGTH, fixture.source);
+    const predicted = isNdsRelevantText(fixture.text);
+    if (fixture.label && predicted) confusion.tp++;
+    else if (!fixture.label && predicted) confusion.fp++;
+    else if (!fixture.label && !predicted) confusion.tn++;
+    else confusion.fn++;
+  }
+  const precision = confusion.tp / (confusion.tp + confusion.fp);
+  const recall = confusion.tp / (confusion.tp + confusion.fn);
+  assert.deepEqual(confusion, { tp: 4, fp: 0, tn: 5, fn: 0 });
+  assert.equal(precision, 1);
+  assert.equal(recall, 1);
+});
+
 test("public preview dry-run endpoint is fetch-only and never calls AI or writes KV", async () => {
   const originalFetch = globalThis.fetch;
   const html = '<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="NDS4ALLVIDEOS/125"><div class="tgme_widget_message_text">Nodal Displacement Sequencing uses a Hook, a Flag and a Rally sequence to define the structure of a market move with sufficient explanatory detail for the source threshold.</div></div></div>';
