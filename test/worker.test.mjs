@@ -185,6 +185,7 @@ function sourceEvidencePayloadForTest(rule) {
 
 function evidenceRule(overrides = {}) {
   const sourceExcerpt = "The market forms a completed positive cycle after the two hooks and two rallies, followed by the flag.";
+  const sourcePostText = sourceExcerpt;
   const sourceExcerptHash = createHash("sha256").update(sourceExcerpt).digest("hex");
   const rule = {
     id: "rule-001",
@@ -196,8 +197,9 @@ function evidenceRule(overrides = {}) {
     validationStatus: "pending",
     contentType: "trading_rule",
     sourcePostId: "123",
-    sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123",
+    sourcePostUrl: "https://t.me/s/FuzzyLogic_NDS/123",
     sourceExcerpt,
+    sourcePostText,
     sourceExcerptHash,
     sourceExcerptVerified: true,
     sourcePostContentHash: createHash("sha256").update(sourceExcerpt).digest("hex"),
@@ -419,6 +421,51 @@ test("approval fails closed when pending or active KV JSON is malformed", async 
     assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS_pending"), pendingBefore);
     assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS"), activeBefore);
     assert.equal(state.DB.locks.size, 0);
+  }
+});
+
+test("Telegram approval binds the excerpt to hashed source content and the official channel provenance", async () => {
+  const headers = { "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key" };
+  const resign = rule => {
+    rule.sourceEvidenceSignature = createHmac("sha256", TEST_NDS_EVIDENCE_KEY)
+      .update(JSON.stringify(sourceEvidencePayloadForTest(rule))).digest("hex");
+    return rule;
+  };
+  const missingText = evidenceRule({ sourcePostText: "" });
+  const excerptNotInText = evidenceRule({
+    sourcePostText: "This is a different captured public post with enough text, but it does not contain the quoted NDS excerpt."
+  });
+  excerptNotInText.sourcePostContentHash = createHash("sha256")
+    .update(excerptNotInText.sourcePostText).digest("hex");
+  resign(excerptNotInText);
+  const mismatchedHash = evidenceRule({ sourcePostContentHash: "0".repeat(64) });
+  resign(mismatchedHash);
+  const untypedLegacy = evidenceRule({ sourceOriginType: "" });
+  const thirdPartyMislabelled = evidenceRule({
+    sourcePostUrl: "https://t.me/s/NDS4ALLVIDEOS/123"
+  });
+  const cases = [
+    ["missing source text", missingText],
+    ["excerpt not present in source text", excerptNotInText],
+    ["source content hash mismatch", mismatchedHash],
+    ["missing provenance type", untypedLegacy],
+    ["third-party channel mislabeled as official", thirdPartyMislabelled]
+  ];
+
+  for (const [label, rule] of cases) {
+    const state = makeEnv({ pending: [rule] });
+    const pendingBefore = state.KNOWLEDGE.values.get("knowledge_NDS_pending");
+    const activeBefore = state.KNOWLEDGE.values.get("knowledge_NDS");
+    const response = await worker.fetch(
+      makeRequest("/training/approve", makeApprovalBody([rule.id], [rule]), headers),
+      state.env,
+      ctx
+    );
+    assert.equal(response.status, 409, label);
+    assert.equal(state.DB.rows.size, 0, label);
+    assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS_pending"), pendingBefore, label);
+    assert.equal(state.KNOWLEDGE.values.get("knowledge_NDS"), activeBefore, label);
+    assert.equal(state.DB.locks.size, 0, label);
   }
 });
 
