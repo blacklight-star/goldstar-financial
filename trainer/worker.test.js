@@ -701,10 +701,10 @@ test("Academia is catalogued as the primary author source with first-party PDF a
     assert.equal(farsi.title, "Nodal Displacement Sequencing");
     assert.equal(farsi.fileName, "NDS_farsi-libre.pdf");
     assert.equal(farsi.platformListingTitle, "NDS farsi");
-    assert.equal(farsi.author, "Attribution unresolved; see internalCredits and platformListingAttribution.");
-    assert.equal(farsi.provenanceStatus, "attribution_roles_unreconciled");
-    assert.equal(farsi.sourceOriginType, "academia_listed_source_with_internal_credit_conflict");
-    assert.equal(farsi.sourceRole, "primary_core_methodology_provenance_review_required");
+    assert.equal(farsi.author, "Platform listing attribution: Dr. Iraj Jafarian; PDF internal credits: M3hRd4Di (preparer, writer, graphic designer) and Dr. Fuzzy Logic (supervising professor). Roles are not independently reconciled.");
+    assert.equal(farsi.provenanceStatus, "role_attribution_separated_unverified");
+    assert.equal(farsi.sourceOriginType, "academia_listed_source_with_document_role_attributions");
+    assert.equal(farsi.sourceRole, "primary_core_methodology_source_roles_recorded_separately");
     assert.equal(farsi.internalCredits.preparerWriterGraphicDesigner, "M3hRd4Di (PDF page 124)");
     assert.equal(farsi.internalCredits.supervisingProfessorAcknowledged, "Dr. Fuzzy Logic (PDF page 124)");
     assert.equal(farsi.coverAttribution, "Dr. Fuzzy Logic (PDF page 1)");
