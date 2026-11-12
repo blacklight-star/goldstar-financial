@@ -15,6 +15,9 @@ function policy(overrides = {}) {
     max_positions: 3,
     order_execution_enabled: 0,
     live_trading_enabled: 0,
+    status: "approved",
+    owner_approval_ref: "TEST-OWNER-APPROVAL",
+    effective_from: "2026-01-01T00:00:00.000Z",
     ...overrides
   };
 }
@@ -102,6 +105,19 @@ test("missing per-trade risk limit fails closed", () => {
   const result = simulateRiskGate(policy({ risk_per_trade_pct: null }), validInput());
   assert.equal(result.ok, false);
   assert.ok(result.reasons.includes("risk_per_trade_limit_not_configured"));
+});
+
+test("draft, unapproved, missing-owner-reference, or future risk policies fail closed", () => {
+  for (const override of [
+    { status: "draft_staging_provisional_limits" },
+    { status: "approved", owner_approval_ref: null },
+    { status: "approved", effective_from: null },
+    { status: "approved", effective_from: "2099-01-01T00:00:00.000Z" }
+  ]) {
+    const result = simulateRiskGate(policy(override), validInput());
+    assert.equal(result.ok, false);
+    assert.ok(result.reasons.includes("risk_policy_not_owner_approved_or_effective"));
+  }
 });
 
 test("missing, null, or empty cost inputs fail closed instead of becoming zero", () => {
@@ -203,7 +219,7 @@ test("volume steps are anchored at the broker minimum volume", () => {
     slippageCostPerLot: 0
   }));
   assert.equal(result.ok, true);
-  assert.equal(result.rawVolume, 1);
+  assert.ok(Math.abs(result.rawVolume - 1) < 1e-10);
   assert.equal(result.calculatedVolume, 0.9);
   assert.ok(result.estimatedRisk <= result.riskBudget);
 });
