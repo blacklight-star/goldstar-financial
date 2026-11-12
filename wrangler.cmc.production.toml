@@ -1,0 +1,16 @@
+name = "trading-research-agent"
+main = "workers/trading-research-agent-cmc/src/worker.js"
+compatibility_date = "2026-11-02"
+compatibility_flags = ["nodejs_compat"]
+usage_model = "standard"
+
+[[d1_databases]]
+binding = "MARKET_DB"
+database_name = "goldstar_market_research_prod"
+database_id = "7703d149-e28e-4105-87a3-1f86e86b962a"
+
+[observability]
+enabled = true
+
+[secrets]
+required = ["CMC_API_KEY", "INGEST_AUTH_TOKEN"]
