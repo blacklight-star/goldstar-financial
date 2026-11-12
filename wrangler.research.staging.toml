@@ -1,0 +1,15 @@
+name = "trading-research-agent-staging"
+main = "workers/trading-research-agent/src/worker.js"
+compatibility_date = "2026-11-07"
+preview_urls = true
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "goldstar_market_research_staging"
+database_id = "e5978640-6035-41fe-8947-4e6fc58c5a92"
+
+[secrets]
+required = ["MQL5_MARKETDATA_API_KEY", "MQL5_GATEWAY_API_KEY"]
