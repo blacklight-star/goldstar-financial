@@ -1,0 +1,12 @@
+name = "goldstar-cmc-ingest-staging"
+main = "workers/cmc-ingest/src/worker.js"
+compatibility_date = "2026-11-08"
+preview_urls = true
+
+[[d1_databases]]
+binding = "MARKET_DB"
+database_name = "goldstar_market_research_staging"
+database_id = "e5978640-6035-41fe-8947-4e6fc58c5a92"
+
+[secrets]
+required = ["CMC_API_KEY", "INGEST_AUTH_TOKEN"]

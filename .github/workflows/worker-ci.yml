@@ -1,0 +1,174 @@
+name: worker-ci
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - main
+      - security/require-l1-bridge-for-rule-approval
+      - fix/fail-closed-kv-read-errors
+  pull_request:
+    branches:
+      - main
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm test
+
+      - name: Live immutable preview health checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_json() {
+            name="$1"; url="$2"
+            response="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-connrefused --connect-timeout 10 --max-time 20 "$url")"
+            CHECK_NAME="$name" RESPONSE="$response" node -e '
+              const data = JSON.parse(process.env.RESPONSE);
+              let ok = false;
+              switch (process.env.CHECK_NAME) {
+                case "Financial L2 V37":
+                  ok = data.status === "ok" && data.analysisEnabled === false;
+                  break;
+                case "Financial L2 Production D1 Preview V38":
+                  ok = data.status === "ok" && data.analysisEnabled === false;
+                  break;
+                case "MQL5/MT5 V5":
+                  ok = data.ok === true && data.mql5_configured === true && data.mt5_demo_bridge_configured === true && data.database_configured === true && data.mode === "demo_read_only";
+                  break;
+                case "MQL5/MT5 Historical OHLC V18":
+                  ok = data.ok === true && data.mql5_configured === true && data.mt5_demo_bridge_configured === true && data.database_configured === true && data.mode === "demo_read_only";
+                  break;
+                case "MT5 V5":
+                  ok = data.ok === true && data.mt5_demo_bridge_configured === true && data.database_configured === true && data.mode === "demo_read_only";
+                  break;
+                case "Trainer V17":
+                  ok = data.ok === true && data.scheduler === "paused; no Cron triggers configured";
+                  break;
+                case "CMC Ingestion V1":
+                  ok = data.ok === true && data.service === "goldstar-cmc-ingest" &&
+                    data.storage === "dedicated_market_research_d1" &&
+                    data.database_configured === true &&
+                    data.cmc_configured === true &&
+                    data.ingest_auth_configured === true;
+                  break;
+                case "CMC Production D1 Preview V12":
+                  ok = data.ok === true &&
+                    data.service === "goldstar-cmc-ingest" &&
+                    data.storage === "dedicated_market_research_d1" &&
+                    data.database_configured === true &&
+                    data.cmc_configured === true &&
+                    data.ingest_auth_configured === true;
+                  break;
+                case "TV Ingest Production D1 Preview V11":
+                  ok = data.status === "ok" && data.service === "tradingview-ingest" && data.version === "1.2.0";
+                  break;
+                case "Goldstar CMC Staging":
+                  ok = data.ok === true &&
+                    data.service === "goldstar-cmc-ingest-staging" &&
+                    data.market_db_configured === true &&
+                    data.vault_db_configured === true &&
+                    data.encryption_key_configured === true &&
+                    data.credential_vault === "AES-256-GCM; isolated EU D1";
+                  break;
+              }
+              if (!ok) { console.error(process.env.CHECK_NAME + " health check failed:", data); process.exit(1); }
+              console.log(process.env.CHECK_NAME + " preview health OK");
+            '
+          }
+          check_json "Financial L2 V37" "https://4eed5ce2-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
+          check_json "Financial L2 Production D1 Preview V38" "https://c53f0960-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
+          check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
+          check_json "MQL5/MT5 Historical OHLC V18" "https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
+          check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
+          check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
+          check_json "CMC Production D1 Preview V12" "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/health"
+          check_json "TV Ingest Production D1 Preview V11" "https://80354bfd-tv-ingest.goldstar-nsl83.workers.dev/health"
+          check_json "Goldstar CMC Staging" "https://goldstar-cmc-ingest-staging.goldstar-nsl83.workers.dev/health"
+
+          # V37 must fail closed when no dedicated L1 bridge credential is supplied.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/risk-policy-unauth.json -w '%{http_code}' "https://4eed5ce2-goldstar-financial-v3.goldstar-nsl83.workers.dev/risk/policy")"
+          echo "V37 /risk/policy unauthenticated HTTP: $status"
+          cat /tmp/risk-policy-unauth.json
+          case "$status" in 401|403) ;; *) echo "Unexpected unauthenticated policy status"; exit 1 ;; esac
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/risk-sim-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"currentEquity":1000}' "https://4eed5ce2-goldstar-financial-v3.goldstar-nsl83.workers.dev/risk/simulate")"
+          echo "V37 /risk/simulate unauthenticated HTTP: $status"
+          cat /tmp/risk-sim-unauth.json
+          case "$status" in 401|403) ;; *) echo "Unexpected unauthenticated simulation status"; exit 1 ;; esac
+          echo "Financial L2 V37 risk routes reject unauthenticated access; no order was submitted."
+          # Production-D1-bound V38 preview must remain fail-closed without the L1 bridge.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/v38-risk-policy-unauth.json -w '%{http_code}' "https://c53f0960-goldstar-financial-v3.goldstar-nsl83.workers.dev/risk/policy")"
+          echo "V38 /risk/policy unauthenticated HTTP: $status"
+          case "$status" in 401|403) ;; *) cat /tmp/v38-risk-policy-unauth.json; echo "V38 risk policy did not reject unauthenticated access"; exit 1 ;; esac
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/v38-risk-sim-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"currentEquity":1000}' "https://c53f0960-goldstar-financial-v3.goldstar-nsl83.workers.dev/risk/simulate")"
+          echo "V38 /risk/simulate unauthenticated HTTP: $status"
+          case "$status" in 401|403) ;; *) cat /tmp/v38-risk-sim-unauth.json; echo "V38 risk simulation did not reject unauthenticated access"; exit 1 ;; esac
+
+          # CMC Preview: bearer auth only; the old one-shot route stays retired.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/cmc-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"symbols":["BTC"],"convert":"USD"}' "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes")"
+          echo "CMC Preview /cmc/quotes unauthenticated HTTP: $status"
+          case "$status" in 401|403) ;; *) cat /tmp/cmc-unauth.json; echo "Unexpected unauthenticated CMC status"; exit 1 ;; esac
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/cmc-one-shot.json -w '%{http_code}' "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes-once")"
+          echo "CMC Preview retired /cmc/quotes-once HTTP: $status"
+          case "$status" in 404) ;; *) cat /tmp/cmc-one-shot.json; echo "Public one-shot CMC route is still exposed"; exit 1 ;; esac
+
+          check_status() {
+            name="$1"; url="$2"; expected="$3"
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/route-check.json -w '%{http_code}' "$url")"
+            echo "$name HTTP: $status (expected $expected)"
+            if [ "$status" != "$expected" ]; then
+              cat /tmp/route-check.json
+              echo "Route compatibility check failed: $name"
+              exit 1
+            fi
+          }
+
+          # V18 introduced the historical OHLC endpoint. An invalid bridge key must be rejected
+          # before any history batch can be written; this probes route + auth without ingesting data.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/mt5-history-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' -H 'X-Goldstar-MT5-Key: invalid-ci-token' --data '{"account":{"server":"AMarkets-Demo","terminal_build":5000,"terminal_connected":true,"trade_mode":"DEMO"},"bars":[{"symbol":"EURUSD","timeframe":"M5","time_msc":1760000000000,"open":1.12,"high":1.13,"low":1.11,"close":1.125,"tick_volume":100,"real_volume":0,"spread_points":10}]}' "https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/history")"
+          echo "MT5 V18 /mt5/history invalid-key HTTP: $status"
+          case "$status" in 401|403) ;; *) cat /tmp/mt5-history-unauth.json; echo "MT5 historical ingestion did not reject invalid bridge authentication"; exit 1 ;; esac
+
+          # MQL5 client gateway routes must reject invalid credentials before contacting
+          # the upstream MetaTrader MCP service. These probes do not call upstream or write.
+          for route in tools call; do
+            if [ "$route" = "tools" ]; then
+              body='{}'
+            else
+              body='{"name":"marketdata_get_symbol_info","arguments":{}}'
+            fi
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o "/tmp/mql5-$route-unauth.json" -w '%{http_code}' -X POST -H 'content-type: application/json' -H 'Authorization: Bearer invalid-ci-token' --data "$body" "https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev/mql5/$route")"
+            echo "MQL5 V18 /mql5/$route invalid-key HTTP: $status"
+            case "$status" in 401) ;; *) cat "/tmp/mql5-$route-unauth.json"; echo "MQL5 /$route did not reject invalid client credentials"; exit 1 ;; esac
+          done
+
+          # The active v8 CMC/TradingView version explicitly retired /discover with 410.
+          # The new candidate must preserve that contract and not introduce extra discovery endpoints.
+          for route in / /health /.well-known/oauth-authorization-server /.well-known/openid-configuration /mcp /discover /tradingview/discovery /oauth/discovery; do
+            case "$route" in
+              /health) expected=200 ;;
+              /discover) expected=410 ;;
+              *) expected=404 ;;
+            esac
+            check_status "Active-v8 $route" "https://7d869ad6-trading-research-agent.goldstar-nsl83.workers.dev$route" "$expected"
+            check_status "Candidate-v12 $route" "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev$route" "$expected"
+          done
+
+          check_status "Candidate-v12 GET /cmc/quotes" "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes" "405"
+          echo "CMC candidate route compatibility and authentication checks passed."
+          # TradingView candidate must reject an invalid webhook token before touching the production D1.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/tv-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"token":"invalid-test-token","symbol":"BTCUSD","timeframe":"M5","event_id":"ci-unauth-check"}' "https://80354bfd-tv-ingest.goldstar-nsl83.workers.dev/webhook")"
+          echo "TV Ingest Preview /webhook invalid token HTTP: $status"
+          case "$status" in 401) ;; *) cat /tmp/tv-unauth.json; echo "TradingView webhook failed to reject invalid token"; exit 1 ;; esac
+

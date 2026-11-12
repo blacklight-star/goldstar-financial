@@ -18,3 +18,13 @@ id = "5d697a43de734fe4b19bb483551a2107"
 [[kv_namespaces]]
 binding = "STRATEGY"
 id = "f92591c6406f4db0b037573a1b70950c"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "goldstar_nds_prod"
+database_id = "17b4c44d-d9c4-4574-86e6-f36cfce911aa"
+
+[[d1_databases]]
+binding = "MARKET_DB"
+database_name = "goldstar_market_research_prod"
+database_id = "7703d149-e28e-4105-87a3-1f86e86b962a"
