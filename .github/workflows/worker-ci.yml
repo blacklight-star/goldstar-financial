@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - fix/mql5-gateway-client-auth
+      - fix/l2-mql5-marketdata-proxy
   pull_request:
     branches:
       - main
