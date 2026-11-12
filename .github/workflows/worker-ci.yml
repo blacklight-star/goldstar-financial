@@ -57,6 +57,14 @@ jobs:
                     data.cmc_configured === true &&
                     data.ingest_auth_configured === true;
                   break;
+                case "CMC Production D1 Preview V11":
+                  ok = data.ok === true &&
+                    data.service === "goldstar-cmc-ingest" &&
+                    data.storage === "dedicated_market_research_d1" &&
+                    data.database_configured === true &&
+                    data.cmc_configured === true &&
+                    data.ingest_auth_configured === true;
+                  break;
                 case "Goldstar CMC Staging":
                   ok = data.ok === true &&
                     data.service === "goldstar-cmc-ingest-staging" &&
@@ -74,6 +82,7 @@ jobs:
           check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
           check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
+          check_json "CMC Production D1 Preview V11" "https://398f75f4-trading-research-agent.goldstar-nsl83.workers.dev/health"
           check_json "Goldstar CMC Staging" "https://goldstar-cmc-ingest-staging.goldstar-nsl83.workers.dev/health"
 
           # V37 must fail closed when no dedicated L1 bridge credential is supplied.
@@ -86,3 +95,11 @@ jobs:
           cat /tmp/risk-sim-unauth.json
           case "$status" in 401|403) ;; *) echo "Unexpected unauthenticated simulation status"; exit 1 ;; esac
           echo "Financial L2 V37 risk routes reject unauthenticated access; no order was submitted."
+          # CMC production candidate must keep bearer auth and must not expose the retired one-shot GET route.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/cmc-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"symbols":["BTC"],"convert":"USD"}' "https://398f75f4-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes")"
+          echo "CMC Preview /cmc/quotes unauthenticated HTTP: $status"
+          case "$status" in 401|403) ;; *) cat /tmp/cmc-unauth.json; echo "Unexpected unauthenticated CMC status"; exit 1 ;; esac
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/cmc-one-shot.json -w '%{http_code}' "https://398f75f4-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes-once")"
+          echo "CMC Preview retired /cmc/quotes-once HTTP: $status"
+          case "$status" in 404) ;; *) cat /tmp/cmc-one-shot.json; echo "Public one-shot CMC route is still exposed"; exit 1 ;; esac
+
