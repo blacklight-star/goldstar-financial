@@ -14,13 +14,13 @@
 
 ## Destination and authentication
 
-`https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/history`
+`https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/history`
 
 The EA sends the staging `MT5_BRIDGE_KEY` only in the `X-Goldstar-MT5-Key` request header. Enter the key in EA Inputs; never commit it or paste it into chat, source code, screenshots or logs.
 
 In MT5, add this exact host to **Tools → Options → Expert Advisors → Allow WebRequest for listed URL**:
 
-`https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev`
+`https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev`
 
 ## Time normalization
 
