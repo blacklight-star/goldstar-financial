@@ -131,6 +131,14 @@ export function simulateRiskGate(policy, input) {
     return reject("maximum_positions_not_configured", { drawdownPct });
   }
 
+  const policyStatus = String(policy.status || "").trim().toLowerCase();
+  const ownerApprovalRef = String(policy.owner_approval_ref || "").trim();
+  const effectiveFrom = Date.parse(String(policy.effective_from || ""));
+  if (policyStatus !== "approved" || !ownerApprovalRef ||
+      !Number.isFinite(effectiveFrom) || effectiveFrom > Date.now()) {
+    return reject("risk_policy_not_owner_approved_or_effective", { drawdownPct });
+  }
+
   const currentDailyLossPct = numericValue(input.currentDailyLossPct);
   const currentOpenRiskPct = numericValue(input.currentOpenRiskPct);
   const currentCorrelatedExposurePct = numericValue(input.currentCorrelatedExposurePct);
