@@ -41,6 +41,9 @@ jobs:
                 case "Financial L2 V37":
                   ok = data.status === "ok" && data.analysisEnabled === false;
                   break;
+                case "Financial L2 Production D1 Preview V38":
+                  ok = data.status === "ok" && data.analysisEnabled === false;
+                  break;
                 case "MQL5/MT5 V5":
                   ok = data.ok === true && data.mql5_configured === true && data.mt5_demo_bridge_configured === true && data.database_configured === true && data.mode === "demo_read_only";
                   break;
@@ -82,6 +85,7 @@ jobs:
             '
           }
           check_json "Financial L2 V37" "https://4eed5ce2-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
+          check_json "Financial L2 Production D1 Preview V38" "https://c53f0960-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
           check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
           check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
@@ -99,6 +103,14 @@ jobs:
           cat /tmp/risk-sim-unauth.json
           case "$status" in 401|403) ;; *) echo "Unexpected unauthenticated simulation status"; exit 1 ;; esac
           echo "Financial L2 V37 risk routes reject unauthenticated access; no order was submitted."
+          # Production-D1-bound V38 preview must remain fail-closed without the L1 bridge.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/v38-risk-policy-unauth.json -w '%{http_code}' "https://c53f0960-goldstar-financial-v3.goldstar-nsl83.workers.dev/risk/policy")"
+          echo "V38 /risk/policy unauthenticated HTTP: $status"
+          case "$status" in 401|403) ;; *) cat /tmp/v38-risk-policy-unauth.json; echo "V38 risk policy did not reject unauthenticated access"; exit 1 ;; esac
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/v38-risk-sim-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"currentEquity":1000}' "https://c53f0960-goldstar-financial-v3.goldstar-nsl83.workers.dev/risk/simulate")"
+          echo "V38 /risk/simulate unauthenticated HTTP: $status"
+          case "$status" in 401|403) ;; *) cat /tmp/v38-risk-sim-unauth.json; echo "V38 risk simulation did not reject unauthenticated access"; exit 1 ;; esac
+
           # CMC Preview: bearer auth only; the old one-shot route stays retired.
           status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/cmc-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"symbols":["BTC"],"convert":"USD"}' "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes")"
           echo "CMC Preview /cmc/quotes unauthenticated HTTP: $status"
