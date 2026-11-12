@@ -1,0 +1,15 @@
+name = "tv-ingest"
+main = "workers/tv-ingest/src/worker.js"
+compatibility_date = "2026-10-28"
+usage_model = "standard"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "goldstar_market_research_prod"
+database_id = "7703d149-e28e-4105-87a3-1f86e86b962a"
+
+[observability]
+enabled = true
+
+[secrets]
+required = ["TV_WEBHOOK_SECRET"]
