@@ -134,9 +134,11 @@ jobs:
             fi
           }
 
-          # V18 introduced the historical OHLC endpoint. GET must be method-rejected, not 404.
-          # This probes route presence only and cannot write market data.
-          check_status "MT5 V18 /mt5/history GET" "https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/history" "405"
+          # V18 introduced the historical OHLC endpoint. An invalid bridge key must be rejected
+          # before any history batch can be written; this probes route + auth without ingesting data.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/mt5-history-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' -H 'X-Goldstar-MT5-Key: invalid-ci-token' --data '{"account":{"server":"AMarkets-Demo","terminal_build":5000,"terminal_connected":true,"trade_mode":"DEMO"},"bars":[{"symbol":"EURUSD","timeframe":"M5","time_msc":1760000000000,"open":1.12,"high":1.13,"low":1.11,"close":1.125,"tick_volume":100,"real_volume":0,"spread_points":10}]}' "https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/history")"
+          echo "MT5 V18 /mt5/history invalid-key HTTP: $status"
+          case "$status" in 401|403) ;; *) cat /tmp/mt5-history-unauth.json; echo "MT5 historical ingestion did not reject invalid bridge authentication"; exit 1 ;; esac
 
           # The active v8 CMC/TradingView version explicitly retired /discover with 410.
           # The new candidate must preserve that contract and not introduce extra discovery endpoints.
