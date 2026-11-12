@@ -1,6 +1,7 @@
 name = "goldstar-financial-v3"
 main = "src/worker.js"
 compatibility_date = "2026-10-28"
+compatibility_flags = ["global_fetch_strictly_public"]
 
 [observability]
 enabled = true
@@ -18,6 +19,11 @@ id = "5d697a43de734fe4b19bb483551a2107"
 [[kv_namespaces]]
 binding = "STRATEGY"
 id = "f92591c6406f4db0b037573a1b70950c"
+
+[[d1_databases]]
+binding = "MARKET_DB"
+database_name = "goldstar_market_research_prod"
+database_id = "7703d149-e28e-4105-87a3-1f86e86b962a"
 
 [vars]
 MQL5_GATEWAY_URL = "https://trading-research-agent.goldstar-nsl83.workers.dev"
