@@ -47,6 +47,9 @@ jobs:
                 case "MQL5/MT5 V5":
                   ok = data.ok === true && data.mql5_configured === true && data.mt5_demo_bridge_configured === true && data.database_configured === true && data.mode === "demo_read_only";
                   break;
+                case "MQL5/MT5 Historical OHLC V18":
+                  ok = data.ok === true && data.mql5_configured === true && data.mt5_demo_bridge_configured === true && data.database_configured === true && data.mode === "demo_read_only";
+                  break;
                 case "MT5 V5":
                   ok = data.ok === true && data.mt5_demo_bridge_configured === true && data.database_configured === true && data.mode === "demo_read_only";
                   break;
@@ -87,6 +90,7 @@ jobs:
           check_json "Financial L2 V37" "https://4eed5ce2-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
           check_json "Financial L2 Production D1 Preview V38" "https://c53f0960-goldstar-financial-v3.goldstar-nsl83.workers.dev/health"
           check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
+          check_json "MQL5/MT5 Historical OHLC V18" "https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
           check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
           check_json "CMC Production D1 Preview V12" "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/health"
@@ -129,6 +133,10 @@ jobs:
               exit 1
             fi
           }
+
+          # V18 introduced the historical OHLC endpoint. GET must be method-rejected, not 404.
+          # This probes route presence only and cannot write market data.
+          check_status "MT5 V18 /mt5/history GET" "https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/history" "405"
 
           # The active v8 CMC/TradingView version explicitly retired /discover with 410.
           # The new candidate must preserve that contract and not introduce extra discovery endpoints.
