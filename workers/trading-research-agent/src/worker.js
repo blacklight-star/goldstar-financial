@@ -361,7 +361,7 @@ export default {
     let providerStatus = null;
     try {
       await env.DB.prepare("INSERT INTO cmc_ingestion_runs (run_id, status, symbols, records_written, provider_status, started_at, completed_at, error_message) VALUES (?, 'running', ?, 0, NULL, ?, NULL, NULL)").bind(runId, symbols.join(","), startedAt).run();
-      const apiUrl = new URL("https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest");
+      const apiUrl = new URL("https://pro-api.coinmarketcap.com/v3/cryptocurrency/quotes/latest");
       apiUrl.searchParams.set("symbol", symbols.join(","));
       apiUrl.searchParams.set("convert", convert);
       const upstream = await fetch(apiUrl.toString(), { method: "GET", headers: { "X-CMC_PRO_API_KEY": env.CMC_API_KEY, "Accept": "application/json" } });
