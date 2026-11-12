@@ -140,6 +140,19 @@ jobs:
           echo "MT5 V18 /mt5/history invalid-key HTTP: $status"
           case "$status" in 401|403) ;; *) cat /tmp/mt5-history-unauth.json; echo "MT5 historical ingestion did not reject invalid bridge authentication"; exit 1 ;; esac
 
+          # MQL5 client gateway routes must reject invalid credentials before contacting
+          # the upstream MetaTrader MCP service. These probes do not call upstream or write.
+          for route in tools call; do
+            if [ "$route" = "tools" ]; then
+              body='{}'
+            else
+              body='{"name":"marketdata_get_symbol_info","arguments":{}}'
+            fi
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o "/tmp/mql5-$route-unauth.json" -w '%{http_code}' -X POST -H 'content-type: application/json' -H 'Authorization: Bearer invalid-ci-token' --data "$body" "https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev/mql5/$route")"
+            echo "MQL5 V18 /mql5/$route invalid-key HTTP: $status"
+            case "$status" in 401) ;; *) cat "/tmp/mql5-$route-unauth.json"; echo "MQL5 /$route did not reject invalid client credentials"; exit 1 ;; esac
+          done
+
           # The active v8 CMC/TradingView version explicitly retired /discover with 410.
           # The new candidate must preserve that contract and not introduce extra discovery endpoints.
           for route in / /health /.well-known/oauth-authorization-server /.well-known/openid-configuration /mcp /discover /tradingview/discovery /oauth/discovery; do
