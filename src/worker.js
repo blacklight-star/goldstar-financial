@@ -93,10 +93,16 @@ export default {
       var bridgeKey = request.headers.get("X-Goldstar-Bridge-Key");
       // API keys are accepted only in headers; query-string credentials can leak through logs and history.
       var legacyKey = request.headers.get("X-API-Key");
+      var mt5PreviewHeader = request.headers.get("X-Goldstar-MT5-Preview-Key");
+      var isMt5ReadPath = path === "/mt5/status" || path === "/mt5/latest" || path === "/mt5/history";
       if (path !== "/health") {
         var validBridge = !!(bridgeKey && env.L1_BRIDGE_KEY && bridgeKey === env.L1_BRIDGE_KEY);
         var validLegacy = !!(legacyKey && env.API_KEY && legacyKey === env.API_KEY);
-        if (!validBridge && !validLegacy) return err("Auth required", 401);
+        // Preview-only credential: valid for the three read-only MT5 routes and only
+        // when explicitly bound to an isolated Preview version. It cannot authorize L2,
+        // MQL5, strategy, training, or any ingestion route.
+        var validMt5Preview = !!(isMt5ReadPath && mt5PreviewHeader && env.MT5_PREVIEW_READ_KEY && mt5PreviewHeader === env.MT5_PREVIEW_READ_KEY);
+        if (!validBridge && !validLegacy && !validMt5Preview) return err("Auth required", 401);
       }
 
       if (path === "/health") return ok({ status: "ok", version: "3.0.2", analysisEnabled: MARKET_ANALYSIS_ENABLED, mt5_market_data_configured: Boolean(env.MARKET_DB) });
@@ -136,7 +142,7 @@ export default {
       // grant access to account-level broker data.
       if (path === "/mt5/status" || path === "/mt5/latest" || path === "/mt5/history") {
         if (method !== "GET") return err("GET required", 405);
-        if (!validBridge) return err("L1 bridge authentication required", 401);
+        if (!validBridge && !validMt5Preview) return err("L1 bridge or isolated Preview read-key authentication required", 401);
         if (!env.MARKET_DB) return err("MT5 market-data database not configured", 503);
 
         try {
