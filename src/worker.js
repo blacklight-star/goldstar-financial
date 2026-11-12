@@ -456,13 +456,20 @@ export default {
             "SELECT policy_id, version, environment, account_currency, starting_equity, max_drawdown_pct, risk_per_trade_pct, daily_loss_limit_pct, max_total_open_risk_pct, max_correlated_exposure_pct, max_positions, high_water_mark_method, lot_sizing_method, required_broker_fields_json, kill_switch_action, order_execution_enabled, live_trading_enabled, status, owner_approval_ref, effective_from FROM gs_risk_policy_versions ORDER BY version DESC LIMIT 1"
           ).first();
           if (!riskPolicy) return ok({ available: false, mode: "demo_only", executionEnabled: false });
+          var approvalEffectiveFrom = Date.parse(String(riskPolicy.effective_from || ""));
+          var ownerApproved = String(riskPolicy.status || "").toLowerCase() === "approved" &&
+            !!String(riskPolicy.owner_approval_ref || "").trim() &&
+            Number.isFinite(approvalEffectiveFrom) && approvalEffectiveFrom <= Date.now();
           return ok({
             available: true,
             mode: riskPolicy.environment,
             policy: riskPolicy,
+            ownerApproved: ownerApproved,
             executionEnabled: false,
             liveTradingEnabled: false,
-            note: "Read-only policy disclosure. This route cannot place, modify, or close orders."
+            note: ownerApproved
+              ? "Owner-approved policy disclosure only. This route cannot place, modify, or close orders."
+              : "Policy is draft, unapproved, or not yet effective. Risk simulation and execution remain disabled."
           });
         } catch (_) {
           return err("Risk policy lookup failed closed", 503);
@@ -480,7 +487,7 @@ export default {
         catch (inputError) { return err(inputError.message || "Invalid request", inputError.status || 400); }
         try {
           var activeRiskPolicy = await env.MARKET_DB.prepare(
-            "SELECT policy_id, version, environment, account_currency, starting_equity, max_drawdown_pct, risk_per_trade_pct, daily_loss_limit_pct, max_total_open_risk_pct, max_correlated_exposure_pct, max_positions, order_execution_enabled, live_trading_enabled, status FROM gs_risk_policy_versions ORDER BY version DESC LIMIT 1"
+            "SELECT policy_id, version, environment, account_currency, starting_equity, max_drawdown_pct, risk_per_trade_pct, daily_loss_limit_pct, max_total_open_risk_pct, max_correlated_exposure_pct, max_positions, order_execution_enabled, live_trading_enabled, status, owner_approval_ref, effective_from FROM gs_risk_policy_versions ORDER BY version DESC LIMIT 1"
           ).first();
           if (!activeRiskPolicy) return err("Risk policy is not configured", 503);
           var simulation = simulateRiskGate(activeRiskPolicy, riskInput);
