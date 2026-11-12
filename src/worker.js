@@ -101,10 +101,41 @@ export default {
 
       if (path === "/health") return ok({ status: "ok", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED });
 
+      if (path === "/mql5/tools" || path === "/mql5/call") {
+        if (method !== "POST") return err("POST required", 405);
+        if (!env.MQL5_GATEWAY_URL || !env.MQL5_GATEWAY_API_KEY) return err("MQL5 gateway not configured", 503);
+        var gatewayBase;
+        try { gatewayBase = new URL(env.MQL5_GATEWAY_URL); }
+        catch (e) { return err("MQL5 gateway URL invalid", 503); }
+        if (gatewayBase.protocol !== "https:") return err("MQL5 gateway must use HTTPS", 503);
+        try {
+          var gatewayResponse = await fetch(gatewayBase.origin + path, {
+            method: "POST",
+            headers: {
+              "content-type": request.headers.get("content-type") || "application/json",
+              "accept": "application/json",
+              "authorization": "Bearer " + env.MQL5_GATEWAY_API_KEY
+            },
+            body: await request.text()
+          });
+          var gatewayText = await gatewayResponse.text();
+          return new Response(gatewayText, {
+            status: gatewayResponse.status,
+            headers: {
+              "Content-Type": gatewayResponse.headers.get("Content-Type") || "application/json; charset=utf-8",
+              ...CORS
+            }
+          });
+        } catch (e) {
+          return err("MQL5 gateway unavailable", 502);
+        }
+      }
+
+
       if (path === "/") return ok({
         name: "Goldstar L2", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED, analysisMode: "disabled_until_verified_market_data",
         styles: ["ICT", "RTM", "NDS"],
-        endpoints: ["/health","/status","/strategy","/knowledge/:style","/training/progress","/training/sources","/training/batch","/strategy/synthesize","/analyze"]
+        endpoints: ["/health","/status","/mql5/tools","/mql5/call","/strategy","/knowledge/:style","/training/progress","/training/sources","/training/batch","/strategy/synthesize","/analyze"]
       });
 
       if (path === "/status") {
