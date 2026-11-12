@@ -32,6 +32,8 @@ test("MT5 OHLC collector is demo-only, timer-driven, incremental, and read-only"
   assert.match(source, /TERMINAL_CONNECTED/);
   assert.match(source, /X-Goldstar-MT5-Key/);
   assert.match(source, /\/mt5\/history/);
+  assert.match(source, /https:\/\/26380461-trading-research-agent-staging\\.goldstar-nsl83\\.workers\\.dev\/mt5\/history/);
+  assert.doesNotMatch(source, /https:\/\/05931c07-trading-research-agent-staging/);
   assert.match(source, /EventSetTimer\(TimerIntervalSeconds\)/);
   assert.match(source, /void OnTimer\(\)/);
   assert.match(source, /CopyRates\(symbol, frames\[timeframeIndex\], 1, BarsPerSeries, rates\)/);
