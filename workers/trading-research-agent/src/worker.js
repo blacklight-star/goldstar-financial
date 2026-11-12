@@ -32,20 +32,30 @@ async function readBoundedJson(request) {
 }
 function numberOrNull(value) { return typeof value === "number" && Number.isFinite(value) ? value : null; }
 
+function parseMcpResponse(text) {
+  if (!text) return null;
+  try { return JSON.parse(text); } catch {}
+  // SSE event data fields form one payload; join all data lines in each event.
+  const events = text.split(/\r?\n\r?\n/);
+  for (const event of events) {
+    const dataLines = event.split(/\r?\n/)
+      .filter(line => line.startsWith("data:"))
+      .map(line => line.slice(5).replace(/^ /, ""));
+    if (!dataLines.length) continue;
+    const payload = dataLines.join("\n").trim();
+    if (!payload || payload === "[DONE]") continue;
+    try { return JSON.parse(payload); } catch {}
+  }
+  return null;
+}
+
 async function mql5Rpc(env, payload, sessionId) {
   const headers = { "authorization": "Bearer " + env.MQL5_MARKETDATA_API_KEY, "content-type": "application/json", "accept": "application/json, text/event-stream" };
   if (sessionId) headers["mcp-session-id"] = sessionId;
   const response = await fetch("https://www.metatrader.com/mcp", { method: "POST", headers, body: JSON.stringify(payload) });
   const session = response.headers.get("mcp-session-id");
   const text = await response.text();
-  let data = null;
-  if (text) {
-    try { data = JSON.parse(text); }
-    catch {
-      const chunks = text.split(/\r?\n/).filter(line => line.startsWith("data:"));
-      for (const line of chunks.reverse()) { try { data = JSON.parse(line.slice(5).trim()); break; } catch {} }
-    }
-  }
+  const data = parseMcpResponse(text);
   if (!response.ok) throw new Error("MQL5 MCP HTTP " + response.status + ": " + String(text).slice(0, 400));
   if (data?.error) throw new Error("MQL5 MCP error: " + JSON.stringify(data.error).slice(0, 400));
   return { data, sessionId: session };
