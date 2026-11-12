@@ -1105,6 +1105,7 @@ test("risk policy endpoint is read-only and L1 bridge-only", async () => {
   assert.equal(result.liveTradingEnabled, false);
   assert.equal(result.policy.max_drawdown_pct, 5);
   assert.equal(result.policy.risk_per_trade_pct, null);
+  assert.equal(result.ownerApproved, false);
   assert.equal(reads.length, 1);
   assert.equal(writes, 0);
 });
@@ -1168,21 +1169,23 @@ test("risk endpoints fail closed when the dedicated market database is unavailab
   assert.equal(simulate.status, 503);
 });
 
-test("risk simulation may report a demo-only estimate when every risk limit is configured but can never execute it", async () => {
+test("risk simulation is available only for an owner-approved effective policy and never executes", async () => {
   let writes = 0;
-  const policy = {
-    policy_id: "GS-RISK-DEMO", version: 2, environment: "DEMO_ONLY",
+  let selectedPolicy = {
+    policy_id: "GS-RISK-DEMO", version: 3, environment: "DEMO_ONLY",
     account_currency: "USD", starting_equity: 1000, max_drawdown_pct: 5,
     risk_per_trade_pct: 1, daily_loss_limit_pct: 2,
     max_total_open_risk_pct: 3, max_correlated_exposure_pct: 4,
     max_positions: 3, order_execution_enabled: 0, live_trading_enabled: 0,
-    status: "draft_staging_owner_review_required"
+    status: "approved",
+    owner_approval_ref: "TEST-OWNER-APPROVAL",
+    effective_from: "2026-01-01T00:00:00.000Z"
   };
   const state = makeEnv();
   state.env.MARKET_DB = {
     prepare() {
       return {
-        async first() { return policy; },
+        async first() { return selectedPolicy; },
         async run() { writes++; return { success: true }; }
       };
     }
@@ -1206,5 +1209,21 @@ test("risk simulation may report a demo-only estimate when every risk limit is c
   assert.equal(result.orderSubmitted, false);
   assert.equal(result.executionEligible, false);
   assert.equal(result.executionEnabled, false);
+  assert.equal(writes, 0);
+
+  selectedPolicy = {
+    ...selectedPolicy,
+    status: "draft_staging_provisional_limits",
+    owner_approval_ref: null,
+    effective_from: null
+  };
+  const draftResponse = await worker.fetch(makeRequest("/risk/simulate", input, {
+    "X-Goldstar-Bridge-Key": "dedicated-l1-bridge-key"
+  }), state.env, ctx);
+  assert.equal(draftResponse.status, 409);
+  const draftResult = await draftResponse.json();
+  assert.equal(draftResult.ok, false);
+  assert.ok(draftResult.reasons.includes("risk_policy_not_owner_approved_or_effective"));
+  assert.equal(draftResult.orderSubmitted, false);
   assert.equal(writes, 0);
 });
