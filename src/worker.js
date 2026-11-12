@@ -99,7 +99,7 @@ export default {
         if (!validBridge && !validLegacy) return err("Auth required", 401);
       }
 
-      if (path === "/health") return ok({ status: "ok", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED });
+      if (path === "/health") return ok({ status: "ok", version: "3.0.2", analysisEnabled: MARKET_ANALYSIS_ENABLED, mt5_market_data_configured: Boolean(env.MARKET_DB) });
 
       if (path === "/mql5/tools" || path === "/mql5/call") {
         if (method !== "POST") return err("POST required", 405);
@@ -132,10 +132,79 @@ export default {
       }
 
 
+      // MT5 research reads are strictly L1-bridge-only. The legacy API key must never
+      // grant access to account-level broker data.
+      if (path === "/mt5/status" || path === "/mt5/latest" || path === "/mt5/history") {
+        if (method !== "GET") return err("GET required", 405);
+        if (!validBridge) return err("L1 bridge authentication required", 401);
+        if (!env.MARKET_DB) return err("MT5 market-data database not configured", 503);
+
+        try {
+          if (path === "/mt5/status") {
+            var totals = await env.MARKET_DB.prepare(
+              "SELECT COUNT(*) AS snapshots_total, MAX(received_at) AS last_received_at FROM mt5_terminal_snapshots"
+            ).first();
+            var latestStatus = await env.MARKET_DB.prepare(
+              "SELECT snapshot_id, received_at, account_login, account_server, currency, terminal_connected, trade_allowed, positions_count, ticks_count FROM mt5_terminal_snapshots ORDER BY received_at DESC LIMIT 1"
+            ).first();
+            return ok({
+              mode: "demo_read_only",
+              snapshots_total: Number(totals && totals.snapshots_total || 0),
+              last_received_at: totals && totals.last_received_at || null,
+              latest: latestStatus || null
+            });
+          }
+
+          if (path === "/mt5/latest") {
+            var latestSnapshot = await env.MARKET_DB.prepare(
+              "SELECT snapshot_id, received_at, account_login, account_server, currency, leverage, balance, equity, margin, free_margin, margin_level, terminal_connected, trade_allowed, positions_count, ticks_count FROM mt5_terminal_snapshots ORDER BY received_at DESC LIMIT 1"
+            ).first();
+            if (!latestSnapshot) {
+              return ok({ mode: "demo_read_only", available: false, snapshot: null, positions: [], ticks: [] });
+            }
+            var positionRows = await env.MARKET_DB.prepare(
+              "SELECT position_ticket, symbol, position_type, volume, price_open, price_current, stop_loss, take_profit, profit, swap, opened_at FROM mt5_positions WHERE snapshot_id = ? ORDER BY position_ticket"
+            ).bind(latestSnapshot.snapshot_id).all();
+            var tickRows = await env.MARKET_DB.prepare(
+              "SELECT symbol, bid, ask, last_price, time_msc FROM mt5_symbol_ticks WHERE snapshot_id = ? ORDER BY symbol"
+            ).bind(latestSnapshot.snapshot_id).all();
+            return ok({
+              mode: "demo_read_only",
+              available: true,
+              snapshot: latestSnapshot,
+              positions: positionRows && Array.isArray(positionRows.results) ? positionRows.results : [],
+              ticks: tickRows && Array.isArray(tickRows.results) ? tickRows.results : []
+            });
+          }
+
+          var historySymbol = String(url.searchParams.get("symbol") || "").trim().toUpperCase();
+          var historyTimeframe = String(url.searchParams.get("timeframe") || "").trim().toUpperCase();
+          var historyLimitText = url.searchParams.get("limit");
+          var historyLimit = historyLimitText === null ? 200 : Number(historyLimitText);
+          if (!/^[A-Z0-9._-]{1,32}$/.test(historySymbol)) return err("Valid symbol is required", 400);
+          if (!["M5", "M15", "H1", "H4", "D1"].includes(historyTimeframe)) return err("Unsupported timeframe", 400);
+          if (!Number.isInteger(historyLimit) || historyLimit < 1 || historyLimit > 1000) return err("Limit must be between 1 and 1000", 400);
+          var historyRows = await env.MARKET_DB.prepare(
+            "SELECT symbol, timeframe, bar_time_utc, time_msc, open, high, low, close, tick_volume, real_volume, spread_points, source_server, terminal_build, collected_at FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ? ORDER BY time_msc DESC LIMIT ?"
+          ).bind(historySymbol, historyTimeframe, historyLimit).all();
+          var historyBars = historyRows && Array.isArray(historyRows.results) ? historyRows.results : [];
+          return ok({
+            mode: "demo_read_only",
+            symbol: historySymbol,
+            timeframe: historyTimeframe,
+            returned: historyBars.length,
+            bars: historyBars
+          });
+        } catch (e) {
+          return err("MT5 market-data read failed: " + String(e.message || e).slice(0, 180), 502);
+        }
+      }
+
+
       if (path === "/") return ok({
         name: "Goldstar L2", version: "3.0.1", analysisEnabled: MARKET_ANALYSIS_ENABLED, analysisMode: "disabled_until_verified_market_data",
         styles: ["ICT", "RTM", "NDS"],
-        endpoints: ["/health","/status","/mql5/tools","/mql5/call","/strategy","/knowledge/:style","/training/progress","/training/sources","/training/batch","/strategy/synthesize","/analyze"]
+        endpoints: ["/health","/status","/mql5/tools","/mql5/call","/mt5/status","/mt5/latest","/mt5/history","/strategy","/knowledge/:style","/training/progress","/training/sources","/training/batch","/strategy/synthesize","/analyze"]
       });
 
       if (path === "/status") {
