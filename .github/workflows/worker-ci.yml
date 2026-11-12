@@ -65,6 +65,9 @@ jobs:
                     data.cmc_configured === true &&
                     data.ingest_auth_configured === true;
                   break;
+                case "TV Ingest Production D1 Preview V11":
+                  ok = data.status === "ok" && data.service === "tradingview-ingest" && data.version === "1.2.0";
+                  break;
                 case "Goldstar CMC Staging":
                   ok = data.ok === true &&
                     data.service === "goldstar-cmc-ingest-staging" &&
@@ -83,6 +86,7 @@ jobs:
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
           check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
           check_json "CMC Production D1 Preview V12" "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/health"
+          check_json "TV Ingest Production D1 Preview V11" "https://80354bfd-tv-ingest.goldstar-nsl83.workers.dev/health"
           check_json "Goldstar CMC Staging" "https://goldstar-cmc-ingest-staging.goldstar-nsl83.workers.dev/health"
 
           # V37 must fail closed when no dedicated L1 bridge credential is supplied.
@@ -128,3 +132,8 @@ jobs:
 
           check_status "Candidate-v12 GET /cmc/quotes" "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes" "405"
           echo "CMC candidate route compatibility and authentication checks passed."
+          # TradingView candidate must reject an invalid webhook token before touching the production D1.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/tv-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"token":"invalid-test-token","symbol":"BTCUSD","timeframe":"M5","event_id":"ci-unauth-check"}' "https://80354bfd-tv-ingest.goldstar-nsl83.workers.dev/webhook")"
+          echo "TV Ingest Preview /webhook invalid token HTTP: $status"
+          case "$status" in 401) ;; *) cat /tmp/tv-unauth.json; echo "TradingView webhook failed to reject invalid token"; exit 1 ;; esac
+
