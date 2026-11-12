@@ -57,7 +57,7 @@ jobs:
                     data.cmc_configured === true &&
                     data.ingest_auth_configured === true;
                   break;
-                case "CMC Production D1 Preview V11":
+                case "CMC Production D1 Preview V12":
                   ok = data.ok === true &&
                     data.service === "goldstar-cmc-ingest" &&
                     data.storage === "dedicated_market_research_d1" &&
@@ -82,7 +82,7 @@ jobs:
           check_json "MQL5/MT5 V5" "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/health"
           check_json "Trainer V17" "https://45c03d2b-goldstar-trainer-staging.goldstar-nsl83.workers.dev/health"
           check_json "CMC Ingestion V1" "https://44b8705a-trading-research-agent.goldstar-nsl83.workers.dev/health"
-          check_json "CMC Production D1 Preview V11" "https://398f75f4-trading-research-agent.goldstar-nsl83.workers.dev/health"
+          check_json "CMC Production D1 Preview V12" "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/health"
           check_json "Goldstar CMC Staging" "https://goldstar-cmc-ingest-staging.goldstar-nsl83.workers.dev/health"
 
           # V37 must fail closed when no dedicated L1 bridge credential is supplied.
@@ -95,18 +95,36 @@ jobs:
           cat /tmp/risk-sim-unauth.json
           case "$status" in 401|403) ;; *) echo "Unexpected unauthenticated simulation status"; exit 1 ;; esac
           echo "Financial L2 V37 risk routes reject unauthenticated access; no order was submitted."
-          # CMC production candidate must keep bearer auth and must not expose the retired one-shot GET route.
-          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/cmc-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"symbols":["BTC"],"convert":"USD"}' "https://398f75f4-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes")"
+          # CMC Preview: bearer auth only; the old one-shot route stays retired.
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/cmc-unauth.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"symbols":["BTC"],"convert":"USD"}' "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes")"
           echo "CMC Preview /cmc/quotes unauthenticated HTTP: $status"
           case "$status" in 401|403) ;; *) cat /tmp/cmc-unauth.json; echo "Unexpected unauthenticated CMC status"; exit 1 ;; esac
-          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/cmc-one-shot.json -w '%{http_code}' "https://398f75f4-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes-once")"
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/cmc-one-shot.json -w '%{http_code}' "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes-once")"
           echo "CMC Preview retired /cmc/quotes-once HTTP: $status"
-          # Read-only route inventory of the active pre-isolation CMC/TradingView version 8.
-          # This reveals compatibility endpoints before deciding whether V11 can replace it.
-          for route in / /health /.well-known/oauth-authorization-server /.well-known/openid-configuration /mcp /discover /tradingview/discovery /oauth/discovery; do
-            status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/legacy-route.json -w '%{http_code}' "https://7d869ad6-trading-research-agent.goldstar-nsl83.workers.dev$route")"
-            echo "Active-v8 preview GET $route HTTP: $status"
-          done
-
           case "$status" in 404) ;; *) cat /tmp/cmc-one-shot.json; echo "Public one-shot CMC route is still exposed"; exit 1 ;; esac
 
+          check_status() {
+            name="$1"; url="$2"; expected="$3"
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/route-check.json -w '%{http_code}' "$url")"
+            echo "$name HTTP: $status (expected $expected)"
+            if [ "$status" != "$expected" ]; then
+              cat /tmp/route-check.json
+              echo "Route compatibility check failed: $name"
+              exit 1
+            fi
+          }
+
+          # The active v8 CMC/TradingView version explicitly retired /discover with 410.
+          # The new candidate must preserve that contract and not introduce extra discovery endpoints.
+          for route in / /health /.well-known/oauth-authorization-server /.well-known/openid-configuration /mcp /discover /tradingview/discovery /oauth/discovery; do
+            case "$route" in
+              /health) expected=200 ;;
+              /discover) expected=410 ;;
+              *) expected=404 ;;
+            esac
+            check_status "Active-v8 $route" "https://7d869ad6-trading-research-agent.goldstar-nsl83.workers.dev$route" "$expected"
+            check_status "Candidate-v12 $route" "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev$route" "$expected"
+          done
+
+          check_status "Candidate-v12 GET /cmc/quotes" "https://a7219b21-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes" "405"
+          echo "CMC candidate route compatibility and authentication checks passed."
