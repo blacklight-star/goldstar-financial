@@ -249,6 +249,11 @@ export default {
         database_configured: Boolean(env.MARKET_DB && typeof env.MARKET_DB.prepare === "function")
       });
     }
+    // The previous production version explicitly retired the legacy TradingView
+    // discovery surface. Preserve that contract instead of silently changing it to 404.
+    if (url.pathname === "/discover") {
+      return json({ ok: false, error: "gone", message: "TradingView discovery endpoint has been retired." }, 410);
+    }
     if (url.pathname === "/cmc/quotes") return handleQuotes(request, env);
     return json({ ok: false, error: "not_found" }, 404);
   }
