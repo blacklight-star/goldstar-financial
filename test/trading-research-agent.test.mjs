@@ -107,13 +107,13 @@ test("MQL5 MCP gateway parses JSON-RPC split across multiple SSE data lines",asy
       const frame=[
         "event: message",
         "data: {",
-        "data: \\"jsonrpc\\": \\"2.0\\",",
-        "data: \\"id\\": 2,",
-        "data: \\"result\\": {\\"tools\\":[{\\"name\\":\\"marketdata_get_symbol_info\\"}]}",
+        "data: \"jsonrpc\": \"2.0\",",
+        "data: \"id\": 2,",
+        "data: \"result\": {\"tools\":[{\"name\":\"marketdata_get_symbol_info\"}]}",
         "data: }",
         "",
         ""
-      ].join("\\r\\n");
+      ].join("\r\n");
       return new Response(frame,{status:200,headers:{"content-type":"text/event-stream","mcp-session-id":"sse-session"}});
     }
     return new Response("",{status:400});
