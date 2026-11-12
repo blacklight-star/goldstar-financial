@@ -14,6 +14,9 @@ test("CMC ingestion uses dedicated D1, bearer authorization, and no public one-s
   assert.match(source, /Bearer /);
   assert.match(source, /constantTimeEqual/);
   assert.match(source, /url\.pathname === "\/cmc\/quotes"/);
+  assert.match(source, /url\.pathname === "\/discover"/);
+  assert.match(source, /TradingView discovery endpoint has been retired/);
+  assert.match(source, /}, 410\)/);
   assert.doesNotMatch(source, /handlePreviewOnceBtc/);
   assert.doesNotMatch(source, /cmc\/quotes-once/);
   assert.doesNotMatch(source, /env\.DB/);
