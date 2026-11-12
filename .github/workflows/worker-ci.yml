@@ -101,5 +101,12 @@ jobs:
           case "$status" in 401|403) ;; *) cat /tmp/cmc-unauth.json; echo "Unexpected unauthenticated CMC status"; exit 1 ;; esac
           status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/cmc-one-shot.json -w '%{http_code}' "https://398f75f4-trading-research-agent.goldstar-nsl83.workers.dev/cmc/quotes-once")"
           echo "CMC Preview retired /cmc/quotes-once HTTP: $status"
+          # Read-only route inventory of the active pre-isolation CMC/TradingView version 8.
+          # This reveals compatibility endpoints before deciding whether V11 can replace it.
+          for route in / /health /.well-known/oauth-authorization-server /.well-known/openid-configuration /mcp /discover /tradingview/discovery /oauth/discovery; do
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 -o /tmp/legacy-route.json -w '%{http_code}' "https://7d869ad6-trading-research-agent.goldstar-nsl83.workers.dev$route")"
+            echo "Active-v8 preview GET $route HTTP: $status"
+          done
+
           case "$status" in 404) ;; *) cat /tmp/cmc-one-shot.json; echo "Public one-shot CMC route is still exposed"; exit 1 ;; esac
 
