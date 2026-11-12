@@ -53,6 +53,9 @@ test("risk simulation estimates lot size from broker tick values and rounds down
   assert.ok(Math.abs(result.lossPerLot - 504) < 1e-8);
   assert.equal(result.calculatedVolume, 0.19);
   assert.ok(result.estimatedRisk <= result.riskBudget);
+  assert.ok(result.projectedDailyLossPct > 0);
+  assert.ok(result.projectedOpenRiskPct > 0);
+  assert.ok(result.projectedCorrelatedExposurePct > 0);
 });
 
 test("5 percent maximum drawdown halts new orders at the threshold", () => {
@@ -67,10 +70,66 @@ test("5 percent maximum drawdown halts new orders at the threshold", () => {
   assert.equal(result.action, "block_new_orders_and_alert_owner");
 });
 
+test("a proposed trade is rejected when it can breach the remaining drawdown budget", () => {
+  const result = simulateRiskGate(policy(), validInput({
+    currentEquity: 9510,
+    highWaterMark: 10000
+  }));
+  assert.equal(result.ok, false);
+  assert.ok(result.reasons.includes("risk_exceeds_remaining_drawdown_budget"));
+  assert.ok(result.remainingDrawdownBudget < result.estimatedRisk);
+});
+
+test("a proposed trade is rejected when it would exceed daily loss headroom", () => {
+  const result = simulateRiskGate(policy(), validInput({ currentDailyLossPct: 1.1 }));
+  assert.equal(result.ok, false);
+  assert.ok(result.reasons.includes("proposed_trade_would_exceed_daily_loss_limit"));
+});
+
+test("a proposed trade is rejected when it would exceed aggregate open-risk headroom", () => {
+  const result = simulateRiskGate(policy(), validInput({ currentOpenRiskPct: 2.1 }));
+  assert.equal(result.ok, false);
+  assert.ok(result.reasons.includes("proposed_trade_would_exceed_aggregate_open_risk_limit"));
+});
+
+test("a proposed trade is conservatively added to correlated exposure before approval", () => {
+  const result = simulateRiskGate(policy(), validInput({ currentCorrelatedExposurePct: 3.1 }));
+  assert.equal(result.ok, false);
+  assert.ok(result.reasons.includes("proposed_trade_would_exceed_correlated_exposure_limit"));
+});
+
 test("missing per-trade risk limit fails closed", () => {
   const result = simulateRiskGate(policy({ risk_per_trade_pct: null }), validInput());
   assert.equal(result.ok, false);
   assert.ok(result.reasons.includes("risk_per_trade_limit_not_configured"));
+});
+
+test("missing, null, or empty cost inputs fail closed instead of becoming zero", () => {
+  for (const override of [
+    { commissionPerLot: null },
+    { spreadCostPerLot: undefined },
+    { slippageCostPerLot: "" }
+  ]) {
+    const result = simulateRiskGate(policy(), validInput(override));
+    assert.equal(result.ok, false);
+    assert.ok(result.reasons.includes("complete_broker_contract_and_cost_fields_required"));
+  }
+});
+
+test("missing, null, or enabled execution switches fail closed", () => {
+  for (const override of [
+    { order_execution_enabled: null },
+    { live_trading_enabled: null },
+    { order_execution_enabled: 1 },
+    { live_trading_enabled: 1 }
+  ]) {
+    const result = simulateRiskGate(policy(override), validInput());
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.reasons.includes("order_execution_disabled") ||
+      result.reasons.includes("live_trading_forbidden")
+    );
+  }
 });
 
 test("missing daily, aggregate, correlation or position limits fail closed", () => {
@@ -91,17 +150,22 @@ test("missing stop-loss and a stop on the wrong side are rejected", () => {
   assert.ok(simulateRiskGate(policy(), validInput({ side: "SELL", stopLoss: 1.0990 })).reasons.includes("stop_loss_is_on_wrong_side_of_entry"));
 });
 
-test("incomplete broker specification and zero-cost assumptions are rejected", () => {
+test("incomplete broker specification is rejected", () => {
   assert.ok(simulateRiskGate(policy(), validInput({ tickValueLoss: null })).reasons.includes("complete_broker_contract_and_cost_fields_required"));
   assert.ok(simulateRiskGate(policy(), validInput({ volumeStep: 0 })).reasons.includes("complete_broker_contract_and_cost_fields_required"));
   assert.ok(simulateRiskGate(policy(), validInput({ currencyConversionRate: null })).reasons.includes("complete_broker_contract_and_cost_fields_required"));
 });
 
-test("aggregate limits and maximum position count are enforced", () => {
+test("aggregate limits and maximum position count are enforced before sizing", () => {
   assert.ok(simulateRiskGate(policy(), validInput({ currentDailyLossPct: 2 })).reasons.includes("daily_loss_limit_reached"));
   assert.ok(simulateRiskGate(policy(), validInput({ currentOpenRiskPct: 3 })).reasons.includes("aggregate_open_risk_limit_reached"));
   assert.ok(simulateRiskGate(policy(), validInput({ currentCorrelatedExposurePct: 4 })).reasons.includes("correlated_exposure_limit_reached"));
   assert.ok(simulateRiskGate(policy(), validInput({ currentOpenPositions: 3 })).reasons.includes("maximum_open_positions_reached"));
+});
+
+test("missing current position count and an inconsistent high-water mark fail closed", () => {
+  assert.ok(simulateRiskGate(policy(), validInput({ currentOpenPositions: null })).reasons.includes("current_open_positions_required"));
+  assert.ok(simulateRiskGate(policy(), validInput({ highWaterMark: 9900 })).reasons.includes("high_water_mark_below_current_equity"));
 });
 
 test("volume below broker minimum is rejected and volume above maximum is capped", () => {
@@ -124,6 +188,24 @@ test("volume below broker minimum is rejected and volume above maximum is capped
   assert.equal(capped.calculatedVolume, 0.05);
   assert.equal(capped.volumeClippedToBrokerMaximum, true);
   assert.ok(capped.estimatedRisk <= capped.riskBudget);
+});
+
+test("volume steps are anchored at the broker minimum volume", () => {
+  const result = simulateRiskGate(policy(), validInput({
+    entryPrice: 1.1000,
+    stopLoss: 1.0990,
+    tickValueLoss: 10,
+    volumeMin: 0.1,
+    volumeMax: 1.1,
+    volumeStep: 0.2,
+    commissionPerLot: 0,
+    spreadCostPerLot: 0,
+    slippageCostPerLot: 0
+  }));
+  assert.equal(result.ok, true);
+  assert.equal(result.rawVolume, 1);
+  assert.equal(result.calculatedVolume, 0.9);
+  assert.ok(result.estimatedRisk <= result.riskBudget);
 });
 
 test("non-demo environment and enabled live trading are rejected", () => {
