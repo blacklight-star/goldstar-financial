@@ -18,3 +18,6 @@ id = "5d697a43de734fe4b19bb483551a2107"
 [[kv_namespaces]]
 binding = "STRATEGY"
 id = "f92591c6406f4db0b037573a1b70950c"
+
+[vars]
+MQL5_GATEWAY_URL = "https://trading-research-agent.goldstar-nsl83.workers.dev"
