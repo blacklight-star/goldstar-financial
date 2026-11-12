@@ -54,6 +54,15 @@ test("MT5 endpoints reject the general API key even when it is valid for other L
   assert.equal(market.state.queries.length, 0);
 });
 
+test("isolated Preview read key is limited to the three MT5 read-only routes", async () => {
+  const { market, bindings } = env({ MT5_PREVIEW_READ_KEY: "mt5-preview-only-test-key" });
+  const allowed = await worker.fetch(get("/mt5/status", { "X-Goldstar-MT5-Preview-Key": "mt5-preview-only-test-key" }), bindings, {});
+  assert.equal(allowed.status, 200);
+  const denied = await worker.fetch(get("/status", { "X-Goldstar-MT5-Preview-Key": "mt5-preview-only-test-key" }), bindings, {});
+  assert.equal(denied.status, 401);
+  assert.equal(market.state.queries.length, 1);
+});
+
 test("MT5 latest joins positions and ticks only to the newest snapshot", async () => {
   const { market, bindings } = env();
   const response = await worker.fetch(get("/mt5/latest", { "X-Goldstar-Bridge-Key": L1_KEY }), bindings, {});
