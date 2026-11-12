@@ -96,6 +96,37 @@ test("MQL5 route enforces JSON content type and bounded request body",async()=>{
 });
 
 
+test("MQL5 MCP gateway parses JSON-RPC split across multiple SSE data lines",async()=>{
+  const {env:bindings}=env();
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async (url,init={})=>{
+    const payload=JSON.parse(init.body);
+    if(payload.method==="initialize") return new Response(JSON.stringify({jsonrpc:"2.0",id:payload.id,result:{protocolVersion:"2025-06-18"}}),{status:200,headers:{"mcp-session-id":"sse-session"}});
+    if(payload.method==="notifications/initialized") return new Response("",{status:202,headers:{"mcp-session-id":"sse-session"}});
+    if(payload.method==="tools/list") {
+      const frame=[
+        "event: message",
+        "data: {",
+        "data: \\"jsonrpc\\": \\"2.0\\",",
+        "data: \\"id\\": 2,",
+        "data: \\"result\\": {\\"tools\\":[{\\"name\\":\\"marketdata_get_symbol_info\\"}]}",
+        "data: }",
+        "",
+        ""
+      ].join("\\r\\n");
+      return new Response(frame,{status:200,headers:{"content-type":"text/event-stream","mcp-session-id":"sse-session"}});
+    }
+    return new Response("",{status:400});
+  };
+  try {
+    const response=await worker.fetch(request("/mql5/tools",{}),bindings);
+    assert.equal(response.status,200);
+    const body=await response.json();
+    assert.equal(body.ok,true);
+    assert.deepEqual(body.tools.map(tool=>tool.name),["marketdata_get_symbol_info"]);
+  } finally { globalThis.fetch=originalFetch; }
+});
+
 function mockCmcV3Fetch(state, payload, status=200) {
   return async (url, init={}) => {
     state.fetchCalls.push({url:String(url),headers:init.headers});
