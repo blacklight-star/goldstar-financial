@@ -14,7 +14,7 @@ input int    MaxMarketWatchSymbols = 20;
 input int    BarsPerSeries = 30;        // Max 20 symbols x 5 timeframes x 30 = 3000 bars
 
 const string HISTORY_URL =
-   "https://05931c07-trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/history";
+   "https://26380461-trading-research-agent-staging.goldstar-nsl83.workers.dev/mt5/history";
 
 struct SeriesCursor
 {
