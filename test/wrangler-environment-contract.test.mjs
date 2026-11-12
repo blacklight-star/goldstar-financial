@@ -18,11 +18,11 @@ test("production and staging D1 bindings remain isolated", async () => {
   const cmcProduction = await readFile(new URL("../wrangler.cmc.production.toml", import.meta.url), "utf8");
 
   assert.match(tvProduction, /name = "tv-ingest"/);
-  assert.match(tvProduction, /binding = "DB"\\s+database_name = "goldstar_market_research_prod"\\s+database_id = "7703d149-e28e-4105-87a3-1f86e86b962a"/);
+  assert.match(tvProduction, /binding = "DB"\s+database_name = "goldstar_market_research_prod"\s+database_id = "7703d149-e28e-4105-87a3-1f86e86b962a"/);
   assert.match(tvProduction, /TV_WEBHOOK_SECRET/);
 
   assert.match(cmcProduction, /name = "trading-research-agent"/);
-  assert.match(cmcProduction, /binding = "MARKET_DB"\\s+database_name = "goldstar_market_research_prod"\\s+database_id = "7703d149-e28e-4105-87a3-1f86e86b962a"/);
+  assert.match(cmcProduction, /binding = "MARKET_DB"\s+database_name = "goldstar_market_research_prod"\s+database_id = "7703d149-e28e-4105-87a3-1f86e86b962a"/);
   assert.match(cmcProduction, /CMC_API_KEY/);
   assert.match(cmcProduction, /INGEST_AUTH_TOKEN/);
 });
