@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - fix/mql5-gateway-client-auth
+      - fix/l2-mql5-marketdata-proxy
   pull_request:
     branches:
       - main
@@ -14,4 +15,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: node --test test/trading-research-agent.test.mjs
+      - run: node --test test/*.test.mjs
