@@ -1,0 +1,30 @@
+name = "goldstar-financial-v3"
+main = "src/worker.js"
+compatibility_date = "2026-10-28"
+compatibility_flags = ["global_fetch_strictly_public"]
+
+[observability]
+enabled = true
+
+[ai]
+binding = "AI"
+
+[browser]
+binding = "BROWSER"
+
+[[kv_namespaces]]
+binding = "KNOWLEDGE"
+id = "5d697a43de734fe4b19bb483551a2107"
+
+[[kv_namespaces]]
+binding = "STRATEGY"
+id = "f92591c6406f4db0b037573a1b70950c"
+
+# Preview-only L2 reads from the isolated staging market database.
+[[d1_databases]]
+binding = "MARKET_DB"
+database_name = "goldstar_market_research_staging"
+database_id = "e5978640-6035-41fe-8947-4e6fc58c5a92"
+
+[vars]
+MQL5_GATEWAY_URL = "https://trading-research-agent.goldstar-nsl83.workers.dev"

@@ -12,4 +12,4 @@ database_name = "goldstar_market_research_staging"
 database_id = "e5978640-6035-41fe-8947-4e6fc58c5a92"
 
 [secrets]
-required = ["MQL5_MARKETDATA_API_KEY", "MQL5_GATEWAY_API_KEY"]
+required = ["MQL5_MARKETDATA_API_KEY", "MQL5_GATEWAY_API_KEY", "MT5_BRIDGE_KEY"]

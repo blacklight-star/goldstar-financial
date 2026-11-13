@@ -5,15 +5,12 @@ compatibility_date = "2026-11-07"
 [observability]
 enabled = true
 
-# Production market-data database. Contains both CMC and MQL5 audit tables.
+# Dedicated production research database; do not bind the NDS database here.
 [[d1_databases]]
 binding = "DB"
 database_name = "goldstar_market_research_prod"
 database_id = "7703d149-e28e-4105-87a3-1f86e86b962a"
 
-# Existing Worker secrets must remain bound:
-# - CMC_API_KEY
-# - INGEST_AUTH_TOKEN
-# Add before production activation:
-# - MQL5_MARKETDATA_API_KEY
-# - MQL5_GATEWAY_API_KEY
+# Provision each value as an encrypted Worker secret before production activation.
+[secrets]
+required = ["CMC_API_KEY", "INGEST_AUTH_TOKEN", "MQL5_MARKETDATA_API_KEY", "MQL5_GATEWAY_API_KEY", "MT5_BRIDGE_KEY"]
