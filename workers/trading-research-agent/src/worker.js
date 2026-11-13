@@ -2,6 +2,10 @@ const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache
 const MAX_BODY_BYTES = 4096;
 const MAX_SYMBOLS = 20;
 const SYMBOL_RE = /^[A-Z0-9]{1,12}$/;
+const MT5_TICK_BATCH_MAX = 100; // Per-request transport batch, not a Market Watch symbol cap.
+const MT5_HISTORY_BATCH_MAX = 500;
+const MT5_HISTORY_TARGETS = Object.freeze({ M5: 20000, M15: 12000, H1: 12000, H4: 3000, D1: 2000 });
+const MT5_SYMBOL_RE = /^[A-Za-z0-9._-]{1,32}$/;
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS }); }
 function constantTimeEqual(a, b) { if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false; let diff = 0; for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i); return diff === 0; }
 async function readBoundedJson(request, maxBytes = MAX_BODY_BYTES) {
@@ -232,6 +236,18 @@ export default {
       }
       try {
         await env.DB.batch(statements);
+        // Retention is based on server receipt time, not broker quote time.
+        const snapshotCutoff = new Date(Date.now() - 90 * 86400000).toISOString();
+        const legacyTickCutoff = new Date(Date.now() - 30 * 86400000).toISOString();
+        try {
+          await env.DB.batch([
+            env.DB.prepare("DELETE FROM mt5_positions WHERE snapshot_id IN (SELECT snapshot_id FROM mt5_terminal_snapshots WHERE received_at < ?)").bind(snapshotCutoff),
+            env.DB.prepare("DELETE FROM mt5_symbol_ticks WHERE snapshot_id IN (SELECT snapshot_id FROM mt5_terminal_snapshots WHERE received_at < ?)").bind(legacyTickCutoff),
+            env.DB.prepare("DELETE FROM mt5_terminal_snapshots WHERE received_at < ?").bind(snapshotCutoff)
+          ]);
+        } catch (retentionError) {
+          console.log("MT5 snapshot retention cleanup deferred:", String(retentionError?.message || retentionError).slice(0, 160));
+        }
         return json({ ok: true, mode: "demo_read_only", snapshot_id: snapshotId, received_at: receivedAt, positions: cleanPositions.length, ticks: cleanTicks.length }, 202);
       } catch {
         return json({ ok: false, error: "snapshot_storage_failed" }, 503);
@@ -239,13 +255,96 @@ export default {
     }
 
 
+    if (url.pathname === "/mt5/ticks") {
+      if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed", allowed: ["POST"] }, 405);
+      if (!env.MT5_BRIDGE_KEY || !env.DB) return json({ ok: false, error: "mt5_bridge_not_configured" }, 503);
+      const supplied = request.headers.get("x-goldstar-mt5-key") || "";
+      if (!constantTimeEqual(supplied, env.MT5_BRIDGE_KEY)) return json({ ok: false, error: "unauthorized" }, 401);
+      let input;
+      try { input = await readBoundedJson(request, 262144); }
+      catch (error) { return json({ ok: false, error: error.message || "invalid_request" }, error.status || 400); }
+      const account = input?.account;
+      const ticks = input?.ticks;
+      if (!account || typeof account !== "object" || Array.isArray(account) ||
+          account.trade_mode !== "DEMO" || account.terminal_connected !== true) {
+        return json({ ok: false, error: "demo_connected_terminal_required" }, 403);
+      }
+      const login = String(account.login || "").trim();
+      const server = String(account.server || "").trim();
+      const terminalBuild = Number(account.terminal_build);
+      if (!/^[0-9]{1,20}$/.test(login) || !server || server.length > 128 ||
+          !Number.isInteger(terminalBuild) || terminalBuild < 1) {
+        return json({ ok: false, error: "invalid_terminal_metadata" }, 400);
+      }
+      if (!Array.isArray(ticks) || ticks.length < 1 || ticks.length > MT5_TICK_BATCH_MAX) {
+        return json({ ok: false, error: "ticks_must_contain_1_to_100_records_per_batch" }, 400);
+      }
+      const clean = [];
+      const seen = new Set();
+      const now = Date.now();
+      for (const tick of ticks) {
+        const symbol = String(tick?.symbol || "");
+        const timeMsc = Number(tick?.time_msc);
+        const prices = ["bid", "ask", "last"].map(key => Number(tick?.[key]));
+        if (!MT5_SYMBOL_RE.test(symbol) || !Number.isSafeInteger(timeMsc) || timeMsc <= 0 ||
+            timeMsc > now + 300000 || prices.some(value => !Number.isFinite(value) || value < 0)) {
+          return json({ ok: false, error: "invalid_symbol_tick" }, 400);
+        }
+        const key = symbol + "|" + timeMsc;
+        if (seen.has(key)) return json({ ok: false, error: "duplicate_tick_in_request" }, 400);
+        seen.add(key);
+        clean.push({ symbol, timeMsc, bid: prices[0], ask: prices[1], last: prices[2] });
+      }
+      const observedAt = new Date().toISOString();
+      const statements = clean.map(tick => env.DB.prepare(
+        "INSERT OR IGNORE INTO mt5_live_ticks (account_login,symbol,time_msc,bid,ask,last_price,source_server,terminal_build,observed_at) VALUES (?,?,?,?,?,?,?,?,?)"
+      ).bind(login,tick.symbol,tick.timeMsc,tick.bid,tick.ask,tick.last,server,terminalBuild,observedAt));
+      try {
+        const results = await env.DB.batch(statements);
+        const inserted = results.reduce((sum, result) => sum + Number(result?.meta?.changes || 0), 0);
+        // Run expiry cleanup at most once per UTC hour; data age uses observed_at.
+        if (new Date().getUTCMinutes() === 0) {
+          const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
+          try { await env.DB.prepare("DELETE FROM mt5_live_ticks WHERE observed_at < ?").bind(cutoff).run(); }
+          catch (retentionError) { console.log("MT5 live tick retention cleanup deferred:", String(retentionError?.message || retentionError).slice(0, 160)); }
+        }
+        return json({ ok: true, mode: "demo_read_only", received: clean.length, inserted,
+          duplicates: clean.length - inserted, symbols: [...new Set(clean.map(t => t.symbol))], observed_at: observedAt }, 202);
+      } catch (error) {
+        return json({ ok: false, error: "tick_storage_failed", message: String(error?.message || error).slice(0, 240) }, 503);
+      }
+    }
+
+    if (url.pathname === "/mt5/history/status") {
+      if (request.method !== "GET") return json({ ok: false, error: "method_not_allowed", allowed: ["GET"] }, 405);
+      if (!env.MT5_BRIDGE_KEY || !env.DB) return json({ ok: false, error: "mt5_bridge_not_configured" }, 503);
+      const supplied = request.headers.get("x-goldstar-mt5-key") || "";
+      if (!constantTimeEqual(supplied, env.MT5_BRIDGE_KEY)) return json({ ok: false, error: "unauthorized" }, 401);
+      const symbol = String(url.searchParams.get("symbol") || "").trim();
+      const timeframe = String(url.searchParams.get("timeframe") || "").trim().toUpperCase();
+      const target = MT5_HISTORY_TARGETS[timeframe];
+      if (!MT5_SYMBOL_RE.test(symbol) || !target) return json({ ok: false, error: "valid_symbol_and_timeframe_required" }, 400);
+      try {
+        const row = await env.DB.prepare(
+          "SELECT COUNT(*) AS stored_bars, MIN(time_msc) AS oldest_time_msc, MAX(time_msc) AS newest_time_msc FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ?"
+        ).bind(symbol,timeframe).first();
+        const stored = Number(row?.stored_bars || 0);
+        return json({ ok: true, mode: "demo_read_only", symbol, timeframe, target_bars: target,
+          stored_bars: stored, remaining_bars: Math.max(0, target - stored), complete: stored >= target,
+          oldest_time_msc: row?.oldest_time_msc == null ? null : Number(row.oldest_time_msc),
+          newest_time_msc: row?.newest_time_msc == null ? null : Number(row.newest_time_msc) });
+      } catch (error) {
+        return json({ ok: false, error: "history_status_failed", message: String(error?.message || error).slice(0, 200) }, 503);
+      }
+    }
+
     if (url.pathname === "/mt5/history") {
       if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed", allowed: ["POST"] }, 405);
       if (!env.MT5_BRIDGE_KEY || !env.DB) return json({ ok: false, error: "mt5_bridge_not_configured" }, 503);
       const supplied = request.headers.get("x-goldstar-mt5-key") || "";
       if (!constantTimeEqual(supplied, env.MT5_BRIDGE_KEY)) return json({ ok: false, error: "unauthorized" }, 401);
       let input;
-      try { input = await readBoundedJson(request, 1048576); }
+      try { input = await readBoundedJson(request, 262144); }
       catch (error) { return json({ ok: false, error: error.message || "invalid_request" }, error.status || 400); }
       const account = input?.account;
       const bars = input?.bars;
@@ -258,54 +357,69 @@ export default {
       if (!sourceServer || sourceServer.length > 128 || !Number.isInteger(terminalBuild) || terminalBuild < 1) {
         return json({ ok: false, error: "invalid_terminal_metadata" }, 400);
       }
-      if (!Array.isArray(bars) || bars.length < 1 || bars.length > 4000) {
-        return json({ ok: false, error: "bars_must_contain_1_to_4000_records" }, 400);
+      if (!Array.isArray(bars) || bars.length < 1 || bars.length > MT5_HISTORY_BATCH_MAX) {
+        return json({ ok: false, error: "bars_must_contain_1_to_500_records_per_batch" }, 400);
       }
-      const allowedTimeframes = new Set(["M5", "M15", "H1", "H4", "D1"]);
+      const symbol = String(bars[0]?.symbol || "");
+      const timeframe = String(bars[0]?.timeframe || "");
+      const target = MT5_HISTORY_TARGETS[timeframe];
+      if (!MT5_SYMBOL_RE.test(symbol) || !target ||
+          bars.some(bar => String(bar?.symbol || "") !== symbol || String(bar?.timeframe || "") !== timeframe)) {
+        return json({ ok: false, error: "each_history_batch_must_contain_one_symbol_and_one_supported_timeframe" }, 400);
+      }
+
       const seen = new Set();
       const clean = [];
       const now = Date.now();
       for (const bar of bars) {
         if (!bar || typeof bar !== "object" || Array.isArray(bar)) return json({ ok: false, error: "invalid_bar_record" }, 400);
-        const symbol = String(bar.symbol || "");
-        const timeframe = String(bar.timeframe || "");
         const timeMsc = Number(bar.time_msc);
-        const prices = ["open", "high", "low", "close"].map(k => Number(bar[k]));
+        const prices = ["open", "high", "low", "close"].map(key => Number(bar[key]));
         const volumes = [Number(bar.tick_volume), Number(bar.real_volume), Number(bar.spread_points)];
-        if (!/^[A-Za-z0-9._-]{1,32}$/.test(symbol) || !allowedTimeframes.has(timeframe) ||
-            !Number.isSafeInteger(timeMsc) || timeMsc <= 0 || timeMsc % 1000 !== 0 || timeMsc > now + 300000 ||
-            prices.some(v => !Number.isFinite(v) || v <= 0) ||
-            volumes.some(v => !Number.isSafeInteger(v) || v < 0)) {
+        if (!Number.isSafeInteger(timeMsc) || timeMsc <= 0 || timeMsc % 1000 !== 0 || timeMsc > now + 300000 ||
+            prices.some(value => !Number.isFinite(value) || value <= 0) ||
+            volumes.some(value => !Number.isSafeInteger(value) || value < 0)) {
           return json({ ok: false, error: "invalid_bar_fields" }, 400);
         }
         const [open, high, low, close] = prices;
         if (high < Math.max(open, close, low) || low > Math.min(open, close, high)) {
           return json({ ok: false, error: "invalid_ohlc_relationship" }, 400);
         }
-        const key = symbol + "|" + timeframe + "|" + timeMsc;
-        if (seen.has(key)) return json({ ok: false, error: "duplicate_bar_in_request" }, 400);
-        seen.add(key);
-        clean.push({ symbol, timeframe, timeMsc, barTime: new Date(timeMsc).toISOString(), open, high, low, close,
+        if (seen.has(timeMsc)) return json({ ok: false, error: "duplicate_bar_in_request" }, 400);
+        seen.add(timeMsc);
+        clean.push({ timeMsc, barTime: new Date(timeMsc).toISOString(), open, high, low, close,
           tickVolume: volumes[0], realVolume: volumes[1], spreadPoints: volumes[2] });
       }
+
       const collectedAt = new Date().toISOString();
       let inserted = 0;
       try {
-        for (let offset = 0; offset < clean.length; offset += 500) {
-          const chunk = clean.slice(offset, offset + 500);
-          const statements = chunk.map(b => env.DB.prepare(
+        for (let offset = 0; offset < clean.length; offset += MT5_HISTORY_BATCH_MAX) {
+          const chunk = clean.slice(offset, offset + MT5_HISTORY_BATCH_MAX);
+          const statements = chunk.map(bar => env.DB.prepare(
             "INSERT OR IGNORE INTO mt5_ohlc_bars (symbol,timeframe,bar_time_utc,time_msc,open,high,low,close,tick_volume,real_volume,spread_points,source_server,terminal_build,collected_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-          ).bind(b.symbol,b.timeframe,b.barTime,b.timeMsc,b.open,b.high,b.low,b.close,b.tickVolume,b.realVolume,b.spreadPoints,sourceServer,terminalBuild,collectedAt));
+          ).bind(symbol,timeframe,bar.barTime,bar.timeMsc,bar.open,bar.high,bar.low,bar.close,bar.tickVolume,bar.realVolume,bar.spreadPoints,sourceServer,terminalBuild,collectedAt));
           const results = await env.DB.batch(statements);
           inserted += results.reduce((sum, result) => sum + Number(result?.meta?.changes || 0), 0);
         }
-        const symbols = [...new Set(clean.map(b => b.symbol))];
-        const timeframes = [...new Set(clean.map(b => b.timeframe))];
-        return json({ ok: true, mode: "demo_read_only", received: clean.length, inserted,
-          duplicates: clean.length - inserted, symbols, timeframes, from_utc: clean.reduce((a,b) => b.timeMsc < a ? b.timeMsc : a, clean[0].timeMsc),
-          to_utc: clean.reduce((a,b) => b.timeMsc > a ? b.timeMsc : a, clean[0].timeMsc), collected_at: collectedAt }, 202);
+        // Keep only the newest target window. The collector uploads newest-to-oldest
+        // during initial backfill, so pruning cannot discard an uncollected newer bar.
+        await env.DB.prepare(
+          "DELETE FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ? AND time_msc NOT IN (SELECT time_msc FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ? ORDER BY time_msc DESC LIMIT ?)"
+        ).bind(symbol,timeframe,symbol,timeframe,target).run();
+
+        const state = await env.DB.prepare(
+          "SELECT COUNT(*) AS stored_bars, MIN(time_msc) AS oldest_time_msc, MAX(time_msc) AS newest_time_msc FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ?"
+        ).bind(symbol,timeframe).first();
+        const stored = Number(state?.stored_bars || 0);
+        return json({ ok: true, mode: "demo_read_only", symbol, timeframe, received: clean.length,
+          inserted, duplicates: clean.length - inserted, target_bars: target, stored_bars: stored,
+          remaining_bars: Math.max(0,target-stored), complete: stored >= target,
+          oldest_time_msc: state?.oldest_time_msc == null ? null : Number(state.oldest_time_msc),
+          newest_time_msc: state?.newest_time_msc == null ? null : Number(state.newest_time_msc),
+          collected_at: collectedAt }, 202);
       } catch (error) {
-        return json({ ok: false, error: "history_storage_failed", message: String(error?.message || error).slice(0,300),
+        return json({ ok: false, error: "history_storage_failed", message: String(error?.message || error).slice(0, 240),
           received: clean.length, inserted_before_failure: inserted }, 503);
       }
     }
