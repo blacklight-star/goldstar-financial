@@ -153,11 +153,16 @@ export default {
             var latestStatus = await env.MARKET_DB.prepare(
               "SELECT snapshot_id, received_at, account_login, account_server, currency, terminal_connected, trade_allowed, positions_count, ticks_count FROM mt5_terminal_snapshots ORDER BY received_at DESC LIMIT 1"
             ).first();
+            var liveTickStatus = await env.MARKET_DB.prepare(
+              "SELECT COUNT(DISTINCT symbol) AS symbols_count, MAX(observed_at) AS last_observed_at FROM mt5_live_ticks"
+            ).first();
             return ok({
               mode: "demo_read_only",
               snapshots_total: Number(totals && totals.snapshots_total || 0),
               last_received_at: totals && totals.last_received_at || null,
-              latest: latestStatus || null
+              latest: latestStatus || null,
+              live_ticks_symbols: Number(liveTickStatus && liveTickStatus.symbols_count || 0),
+              live_ticks_last_observed_at: liveTickStatus && liveTickStatus.last_observed_at || null
             });
           }
 
