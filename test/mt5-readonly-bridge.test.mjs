@@ -169,16 +169,24 @@ test("history status returns the server-side target and resumable oldest cursor"
   assert.deepEqual(state.queries[0].args, ["XAUUSD", "M15"]);
 });
 
-test("history ingestion rejects mixed symbols in one batch to preserve symbol-by-symbol processing", async () => {
-  const { env, state } = makeEnv();
+test("history ingestion accepts multiple symbol/timeframe pairs in one bounded request", async () => {
+  const { env, state } = makeEnv({ storedBars: 1 });
   const time = Math.floor((Date.now() - 60000) / 1000) * 1000;
   const bars = [
     { symbol: "XAUUSD", timeframe: "M15", time_msc: time, open: 2000, high: 2010, low: 1990, close: 2005, tick_volume: 12, real_volume: 0, spread_points: 20 },
-    { symbol: "EURUSD", timeframe: "M15", time_msc: time + 1000, open: 1, high: 1.1, low: 0.9, close: 1.05, tick_volume: 10, real_volume: 0, spread_points: 2 }
+    { symbol: "EURUSD", timeframe: "H1", time_msc: time + 1000, open: 1, high: 1.1, low: 0.9, close: 1.05, tick_volume: 10, real_volume: 0, spread_points: 2 }
   ];
   const response = await worker.fetch(post("/mt5/history", { account, bars }), env);
-  assert.equal(response.status, 400);
-  assert.equal(state.batches.length, 0);
+  assert.equal(response.status, 202);
+  const body = await response.json();
+  assert.equal(body.received, 2);
+  assert.equal(body.pairs.length, 2);
+  assert.deepEqual(body.pairs.map(pair => [pair.symbol, pair.timeframe, pair.target_bars]), [
+    ["XAUUSD", "M15", 12000], ["EURUSD", "H1", 12000]
+  ]);
+  assert.equal(state.batches.length, 1);
+  assert.equal(state.batches[0].length, 2);
+  assert.equal(state.runs.length, 2);
 });
 
 test("history ingestion applies the timeframe-specific rolling target after inserts", async () => {
