@@ -10,7 +10,7 @@ function makeEnv({ key = "mt5-bridge-test-key", failBatch = false, storedBars = 
         async run() { state.runs.push({ sql, args: this.args }); return { success: true, meta: { changes: 0 } }; },
         async first() {
           state.queries.push({ sql, args: this.args });
-          if (/COUNT\\(\\*\\).*FROM mt5_ohlc_bars/i.test(sql)) return { stored_bars: storedBars, oldest_time_msc: 1700000000000, newest_time_msc: 1790000000000 };
+          if (/COUNT\(\*\).*FROM mt5_ohlc_bars/i.test(sql)) return { stored_bars: storedBars, oldest_time_msc: 1700000000000, newest_time_msc: 1790000000000 };
           return null;
         },
         async all() { state.queries.push({ sql, args: this.args }); return { results: [] }; }
