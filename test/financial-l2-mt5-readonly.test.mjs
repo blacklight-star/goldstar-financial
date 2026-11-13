@@ -72,8 +72,11 @@ test("MT5 latest joins positions and ticks only to the newest snapshot", async (
   assert.equal(body.snapshot.snapshot_id, "snap-001");
   assert.equal(body.ticks.length, 1);
   assert.equal(body.positions.length, 0);
-  assert.deepEqual(market.state.queries[1].params, ["snap-001"]);
-  assert.deepEqual(market.state.queries[2].params, ["snap-001"]);
+  const positionQuery = market.state.queries.find(q => /FROM mt5_positions/i.test(q.sql));
+  const liveTickQuery = market.state.queries.find(q => /FROM mt5_live_ticks/i.test(q.sql));
+  assert.deepEqual(positionQuery.params, ["snap-001"]);
+  assert.ok(liveTickQuery);
+  assert.equal(/snapshot_id = \\?/.test(liveTickQuery.sql), false);
   assert.ok(market.state.queries.every(q => /^SELECT\b/i.test(q.sql.trim())));
 });
 
@@ -85,10 +88,10 @@ test("MT5 history query validates symbol, timeframe and row limit before databas
   const response = await worker.fetch(get("/mt5/history?symbol=xauusd&timeframe=m15&limit=100", { "X-Goldstar-Bridge-Key": L1_KEY }), bindings, {});
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.symbol, "XAUUSD");
+  assert.equal(body.symbol, "xauusd");
   assert.equal(body.timeframe, "M15");
   assert.equal(body.returned, 1);
-  assert.deepEqual(market.state.queries[0].params, ["XAUUSD", "M15", 100]);
+  assert.deepEqual(market.state.queries[0].params, ["xauusd", "M15", 100]);
   assert.match(market.state.queries[0].sql, /^SELECT\b/i);
 });
 
