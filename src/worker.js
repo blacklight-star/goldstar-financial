@@ -165,40 +165,48 @@ export default {
             var latestSnapshot = await env.MARKET_DB.prepare(
               "SELECT snapshot_id, received_at, account_login, account_server, currency, leverage, balance, equity, margin, free_margin, margin_level, terminal_connected, trade_allowed, positions_count, ticks_count FROM mt5_terminal_snapshots ORDER BY received_at DESC LIMIT 1"
             ).first();
-            if (!latestSnapshot) {
-              return ok({ mode: "demo_read_only", available: false, snapshot: null, positions: [], ticks: [] });
-            }
-            var positionRows = await env.MARKET_DB.prepare(
-              "SELECT position_ticket, symbol, position_type, volume, price_open, price_current, stop_loss, take_profit, profit, swap, opened_at FROM mt5_positions WHERE snapshot_id = ? ORDER BY position_ticket"
-            ).bind(latestSnapshot.snapshot_id).all();
+            var positionRows = latestSnapshot
+              ? await env.MARKET_DB.prepare(
+                  "SELECT position_ticket, symbol, position_type, volume, price_open, price_current, stop_loss, take_profit, profit, swap, opened_at FROM mt5_positions WHERE snapshot_id = ? ORDER BY position_ticket"
+                ).bind(latestSnapshot.snapshot_id).all()
+              : { results: [] };
             var tickRows = await env.MARKET_DB.prepare(
-              "SELECT symbol, bid, ask, last_price, time_msc FROM mt5_symbol_ticks WHERE snapshot_id = ? ORDER BY symbol"
-            ).bind(latestSnapshot.snapshot_id).all();
+              "SELECT t.account_login, t.symbol, t.bid, t.ask, t.last_price, t.time_msc, t.source_server, t.terminal_build, t.observed_at FROM mt5_live_ticks t INNER JOIN (SELECT account_login, symbol, MAX(time_msc) AS max_time_msc FROM mt5_live_ticks GROUP BY account_login, symbol) latest ON latest.account_login = t.account_login AND latest.symbol = t.symbol AND latest.max_time_msc = t.time_msc ORDER BY t.symbol"
+            ).all();
             return ok({
               mode: "demo_read_only",
-              available: true,
-              snapshot: latestSnapshot,
+              available: !!latestSnapshot,
+              snapshot: latestSnapshot || null,
               positions: positionRows && Array.isArray(positionRows.results) ? positionRows.results : [],
               ticks: tickRows && Array.isArray(tickRows.results) ? tickRows.results : []
             });
           }
 
-          var historySymbol = String(url.searchParams.get("symbol") || "").trim().toUpperCase();
+          var historySymbol = String(url.searchParams.get("symbol") || "").trim();
           var historyTimeframe = String(url.searchParams.get("timeframe") || "").trim().toUpperCase();
           var historyLimitText = url.searchParams.get("limit");
           var historyLimit = historyLimitText === null ? 200 : Number(historyLimitText);
-          if (!/^[A-Z0-9._-]{1,32}$/.test(historySymbol)) return err("Valid symbol is required", 400);
+          var beforeText = url.searchParams.get("before_time_msc");
+          var beforeTimeMsc = beforeText === null ? null : Number(beforeText);
+          if (!/^[A-Za-z0-9._-]{1,32}$/.test(historySymbol)) return err("Valid symbol is required", 400);
           if (!["M5", "M15", "H1", "H4", "D1"].includes(historyTimeframe)) return err("Unsupported timeframe", 400);
           if (!Number.isInteger(historyLimit) || historyLimit < 1 || historyLimit > 1000) return err("Limit must be between 1 and 1000", 400);
-          var historyRows = await env.MARKET_DB.prepare(
-            "SELECT symbol, timeframe, bar_time_utc, time_msc, open, high, low, close, tick_volume, real_volume, spread_points, source_server, terminal_build, collected_at FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ? ORDER BY time_msc DESC LIMIT ?"
-          ).bind(historySymbol, historyTimeframe, historyLimit).all();
+          if (beforeTimeMsc !== null && (!Number.isSafeInteger(beforeTimeMsc) || beforeTimeMsc <= 0)) return err("before_time_msc must be a positive integer", 400);
+          var historyRows = beforeTimeMsc === null
+            ? await env.MARKET_DB.prepare(
+                "SELECT symbol, timeframe, bar_time_utc, time_msc, open, high, low, close, tick_volume, real_volume, spread_points, source_server, terminal_build, collected_at FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ? ORDER BY time_msc DESC LIMIT ?"
+              ).bind(historySymbol, historyTimeframe, historyLimit).all()
+            : await env.MARKET_DB.prepare(
+                "SELECT symbol, timeframe, bar_time_utc, time_msc, open, high, low, close, tick_volume, real_volume, spread_points, source_server, terminal_build, collected_at FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ? AND time_msc < ? ORDER BY time_msc DESC LIMIT ?"
+              ).bind(historySymbol, historyTimeframe, beforeTimeMsc, historyLimit).all();
           var historyBars = historyRows && Array.isArray(historyRows.results) ? historyRows.results : [];
           return ok({
             mode: "demo_read_only",
             symbol: historySymbol,
             timeframe: historyTimeframe,
             returned: historyBars.length,
+            next_before_time_msc: historyBars.length === historyLimit ? Number(historyBars[historyBars.length - 1].time_msc) : null,
+            target_bars: ({ M5: 20000, M15: 12000, H1: 12000, H4: 3000, D1: 2000 })[historyTimeframe],
             bars: historyBars
           });
         } catch (e) {
