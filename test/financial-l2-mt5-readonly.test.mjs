@@ -19,7 +19,7 @@ function makeMarketDb() {
         },
         async all() {
           if (/FROM mt5_positions/i.test(sql)) return { results: [] };
-          if (/FROM mt5_symbol_ticks/i.test(sql)) return { results: [{ symbol: "EURUSD", bid: 1.08, ask: 1.081, last_price: 1.0805, time_msc: 1794517138459 }] };
+          if (/FROM mt5_live_ticks/i.test(sql)) return { results: [{ account_login: "8096845", symbol: "EURUSD", bid: 1.08, ask: 1.081, last_price: 1.0805, time_msc: 1794517138459, source_server: "AMarkets-Demo", terminal_build: 6295, observed_at: "2026-11-12T21:28:57.891Z" }] };
           if (/FROM mt5_ohlc_bars/i.test(sql)) return { results: [{ symbol: "XAUUSD", timeframe: "M15", bar_time_utc: "2026-11-12T20:45:00.000Z", time_msc: 1794516300000, open: 2000, high: 2010, low: 1990, close: 2005, tick_volume: 12, real_volume: 0, spread_points: 20, source_server: "AMarkets-Demo", terminal_build: 5000, collected_at: "2026-11-12T20:46:00.000Z" }] };
           return { results: [] };
         }
@@ -113,4 +113,28 @@ test("MT5 latest returns an explicit empty state when no snapshots exist", async
   assert.equal(body.available, false);
   assert.deepEqual(body.positions, []);
   assert.deepEqual(body.ticks, []);
+});
+
+
+test("MT5 latest reads the independent per-symbol live tick table", async () => {
+  const { market, bindings } = env();
+  const response = await worker.fetch(get("/mt5/latest", { "X-Goldstar-Bridge-Key": L1_KEY }), bindings, {});
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ticks.length, 1);
+  assert.equal(body.ticks[0].symbol, "EURUSD");
+  assert.match(market.state.queries[2].sql, /FROM mt5_live_ticks/);
+});
+
+test("MT5 history supports keyset pagination without offset scans", async () => {
+  const { market, bindings } = env();
+  const response = await worker.fetch(get(
+    "/mt5/history?symbol=XAUUSD&timeframe=M5&limit=500&before_time_msc=1794516300000",
+    { "X-Goldstar-Bridge-Key": L1_KEY }
+  ), bindings, {});
+  assert.equal(response.status, 200);
+  assert.match(market.state.queries[0].sql, /time_msc < \?/);
+  assert.deepEqual(market.state.queries[0].params, ["XAUUSD", "M5", 1794516300000, 500]);
+  const body = await response.json();
+  assert.equal(body.target_bars, 20000);
 });
