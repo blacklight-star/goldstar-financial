@@ -2,10 +2,21 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../workers/trading-research-agent/src/worker.js";
 
-function makeEnv({ key = "mt5-bridge-test-key", failBatch = false } = {}) {
-  const state = { batches: [] };
+function makeEnv({ key = "mt5-bridge-test-key", failBatch = false, storedBars = 1 } = {}) {
+  const state = { batches: [], runs: [], queries: [] };
   const DB = {
-    prepare(sql) { return { sql, args: [], bind(...args) { this.args = args; return this; } }; },
+    prepare(sql) {
+      const statement = { sql, args: [], bind(...args) { this.args = args; return this; },
+        async run() { state.runs.push({ sql, args: this.args }); return { success: true, meta: { changes: 0 } }; },
+        async first() {
+          state.queries.push({ sql, args: this.args });
+          if (/COUNT\\(\\*\\).*FROM mt5_ohlc_bars/i.test(sql)) return { stored_bars: storedBars, oldest_time_msc: 1700000000000, newest_time_msc: 1790000000000 };
+          return null;
+        },
+        async all() { state.queries.push({ sql, args: this.args }); return { results: [] }; }
+      };
+      return statement;
+    },
     async batch(statements) {
       if (failBatch) throw new Error("simulated D1 failure");
       state.batches.push(statements);
@@ -110,4 +121,75 @@ test("snapshot storage failure returns 503 without claiming acceptance", async (
   const body = await response.json();
   assert.equal(body.ok, false);
   assert.equal(body.error, "snapshot_storage_failed");
+});
+
+
+test("independent tick endpoint accepts more than the legacy 30-symbol snapshot cap", async () => {
+  const { env, state } = makeEnv();
+  const ticks = Array.from({ length: 45 }, (_, i) => ({
+    symbol: "SYM" + String(i).padStart(2, "0"),
+    bid: 1.1 + i / 100000,
+    ask: 1.2 + i / 100000,
+    last: 1.15 + i / 100000,
+    time_msc: Date.now() - i
+  }));
+  const response = await worker.fetch(post("/mt5/ticks", { account, ticks }), env);
+  assert.equal(response.status, 202);
+  const body = await response.json();
+  assert.equal(body.received, 45);
+  assert.equal(body.inserted, 45);
+  assert.equal(state.batches.length, 1);
+  assert.equal(state.batches[0].length, 45);
+  assert.match(state.batches[0][0].sql, /INSERT OR IGNORE INTO mt5_live_ticks/);
+});
+
+test("tick endpoint rejects more than one transport batch but does not impose a total symbol cap", async () => {
+  const { env, state } = makeEnv();
+  const ticks = Array.from({ length: 101 }, (_, i) => ({
+    symbol: "SYM" + String(i).padStart(3, "0"), bid: 1, ask: 2, last: 1.5, time_msc: Date.now() - i
+  }));
+  const response = await worker.fetch(post("/mt5/ticks", { account, ticks }), env);
+  assert.equal(response.status, 400);
+  assert.equal(state.batches.length, 0);
+});
+
+test("history status returns the server-side target and resumable oldest cursor", async () => {
+  const { env, state } = makeEnv({ storedBars: 1000 });
+  const response = await worker.fetch(new Request(
+    "https://research.example/mt5/history/status?symbol=XAUUSD&timeframe=M15",
+    { method: "GET", headers: { "x-goldstar-mt5-key": "mt5-bridge-test-key" } }
+  ), env);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.target_bars, 12000);
+  assert.equal(body.stored_bars, 1000);
+  assert.equal(body.remaining_bars, 11000);
+  assert.equal(body.complete, false);
+  assert.equal(body.oldest_time_msc, 1700000000000);
+  assert.deepEqual(state.queries[0].args, ["XAUUSD", "M15"]);
+});
+
+test("history ingestion rejects mixed symbols in one batch to preserve symbol-by-symbol processing", async () => {
+  const { env, state } = makeEnv();
+  const time = Math.floor((Date.now() - 60000) / 1000) * 1000;
+  const bars = [
+    { symbol: "XAUUSD", timeframe: "M15", time_msc: time, open: 2000, high: 2010, low: 1990, close: 2005, tick_volume: 12, real_volume: 0, spread_points: 20 },
+    { symbol: "EURUSD", timeframe: "M15", time_msc: time + 1000, open: 1, high: 1.1, low: 0.9, close: 1.05, tick_volume: 10, real_volume: 0, spread_points: 2 }
+  ];
+  const response = await worker.fetch(post("/mt5/history", { account, bars }), env);
+  assert.equal(response.status, 400);
+  assert.equal(state.batches.length, 0);
+});
+
+test("history ingestion applies the timeframe-specific rolling target after inserts", async () => {
+  const { env, state } = makeEnv({ storedBars: 12000 });
+  const time = Math.floor((Date.now() - 60000) / 1000) * 1000;
+  const bar = { symbol: "EURUSD", timeframe: "M15", time_msc: time, open: 1, high: 1.1, low: 0.9, close: 1.05, tick_volume: 10, real_volume: 0, spread_points: 2 };
+  const response = await worker.fetch(post("/mt5/history", { account, bars: [bar] }), env);
+  assert.equal(response.status, 202);
+  const body = await response.json();
+  assert.equal(body.target_bars, 12000);
+  assert.equal(body.complete, true);
+  assert.equal(state.runs.length, 1);
+  assert.match(state.runs[0].sql, /ORDER BY time_msc DESC LIMIT/);
 });
