@@ -360,19 +360,14 @@ export default {
       if (!Array.isArray(bars) || bars.length < 1 || bars.length > MT5_HISTORY_BATCH_MAX) {
         return json({ ok: false, error: "bars_must_contain_1_to_500_records_per_batch" }, 400);
       }
-      const symbol = String(bars[0]?.symbol || "");
-      const timeframe = String(bars[0]?.timeframe || "");
-      const target = MT5_HISTORY_TARGETS[timeframe];
-      if (!MT5_SYMBOL_RE.test(symbol) || !target ||
-          bars.some(bar => String(bar?.symbol || "") !== symbol || String(bar?.timeframe || "") !== timeframe)) {
-        return json({ ok: false, error: "each_history_batch_must_contain_one_symbol_and_one_supported_timeframe" }, 400);
-      }
-
       const seen = new Set();
       const clean = [];
       const now = Date.now();
       for (const bar of bars) {
         if (!bar || typeof bar !== "object" || Array.isArray(bar)) return json({ ok: false, error: "invalid_bar_record" }, 400);
+        const symbol = String(bar.symbol || "");
+        const timeframe = String(bar.timeframe || "");
+        if (!MT5_SYMBOL_RE.test(symbol) || !MT5_HISTORY_TARGETS[timeframe]) return json({ ok: false, error: "invalid_symbol_or_timeframe" }, 400);
         const timeMsc = Number(bar.time_msc);
         const prices = ["open", "high", "low", "close"].map(key => Number(bar[key]));
         const volumes = [Number(bar.tick_volume), Number(bar.real_volume), Number(bar.spread_points)];
@@ -385,9 +380,10 @@ export default {
         if (high < Math.max(open, close, low) || low > Math.min(open, close, high)) {
           return json({ ok: false, error: "invalid_ohlc_relationship" }, 400);
         }
-        if (seen.has(timeMsc)) return json({ ok: false, error: "duplicate_bar_in_request" }, 400);
-        seen.add(timeMsc);
-        clean.push({ timeMsc, barTime: new Date(timeMsc).toISOString(), open, high, low, close,
+        const key = symbol + "|" + timeframe + "|" + timeMsc;
+        if (seen.has(key)) return json({ ok: false, error: "duplicate_bar_in_request" }, 400);
+        seen.add(key);
+        clean.push({ symbol, timeframe, timeMsc, barTime: new Date(timeMsc).toISOString(), open, high, low, close,
           tickVolume: volumes[0], realVolume: volumes[1], spreadPoints: volumes[2] });
       }
 
@@ -398,26 +394,31 @@ export default {
           const chunk = clean.slice(offset, offset + MT5_HISTORY_BATCH_MAX);
           const statements = chunk.map(bar => env.DB.prepare(
             "INSERT OR IGNORE INTO mt5_ohlc_bars (symbol,timeframe,bar_time_utc,time_msc,open,high,low,close,tick_volume,real_volume,spread_points,source_server,terminal_build,collected_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-          ).bind(symbol,timeframe,bar.barTime,bar.timeMsc,bar.open,bar.high,bar.low,bar.close,bar.tickVolume,bar.realVolume,bar.spreadPoints,sourceServer,terminalBuild,collectedAt));
+          ).bind(bar.symbol,bar.timeframe,bar.barTime,bar.timeMsc,bar.open,bar.high,bar.low,bar.close,bar.tickVolume,bar.realVolume,bar.spreadPoints,sourceServer,terminalBuild,collectedAt));
           const results = await env.DB.batch(statements);
           inserted += results.reduce((sum, result) => sum + Number(result?.meta?.changes || 0), 0);
         }
-        // Keep only the newest target window. The collector uploads newest-to-oldest
-        // during initial backfill, so pruning cannot discard an uncollected newer bar.
-        await env.DB.prepare(
-          "DELETE FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ? AND time_msc NOT IN (SELECT time_msc FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ? ORDER BY time_msc DESC LIMIT ?)"
-        ).bind(symbol,timeframe,symbol,timeframe,target).run();
-
-        const state = await env.DB.prepare(
-          "SELECT COUNT(*) AS stored_bars, MIN(time_msc) AS oldest_time_msc, MAX(time_msc) AS newest_time_msc FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ?"
-        ).bind(symbol,timeframe).first();
-        const stored = Number(state?.stored_bars || 0);
-        return json({ ok: true, mode: "demo_read_only", symbol, timeframe, received: clean.length,
-          inserted, duplicates: clean.length - inserted, target_bars: target, stored_bars: stored,
-          remaining_bars: Math.max(0,target-stored), complete: stored >= target,
-          oldest_time_msc: state?.oldest_time_msc == null ? null : Number(state.oldest_time_msc),
-          newest_time_msc: state?.newest_time_msc == null ? null : Number(state.newest_time_msc),
-          collected_at: collectedAt }, 202);
+        // Retain the newest configured window independently for every symbol/timeframe pair.
+        const groupedPairs = [...new Map(clean.map(bar => [bar.symbol + "|" + bar.timeframe, { symbol: bar.symbol, timeframe: bar.timeframe }])).values()];
+        const pairs = [];
+        for (const pair of groupedPairs) {
+          const target = MT5_HISTORY_TARGETS[pair.timeframe];
+          await env.DB.prepare(
+            "DELETE FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ? AND time_msc NOT IN (SELECT time_msc FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ? ORDER BY time_msc DESC LIMIT ?)"
+          ).bind(pair.symbol,pair.timeframe,pair.symbol,pair.timeframe,target).run();
+          const state = await env.DB.prepare(
+            "SELECT COUNT(*) AS stored_bars, MIN(time_msc) AS oldest_time_msc, MAX(time_msc) AS newest_time_msc FROM mt5_ohlc_bars WHERE symbol = ? AND timeframe = ?"
+          ).bind(pair.symbol,pair.timeframe).first();
+          const stored = Number(state?.stored_bars || 0);
+          pairs.push({ symbol: pair.symbol, timeframe: pair.timeframe, target_bars: target,
+            stored_bars: stored, remaining_bars: Math.max(0,target-stored), complete: stored >= target,
+            oldest_time_msc: state?.oldest_time_msc == null ? null : Number(state.oldest_time_msc),
+            newest_time_msc: state?.newest_time_msc == null ? null : Number(state.newest_time_msc) });
+        }
+        const response = { ok: true, mode: "demo_read_only", received: clean.length,
+          inserted, duplicates: clean.length - inserted, pairs, collected_at: collectedAt };
+        if (pairs.length === 1) Object.assign(response, pairs[0]);
+        return json(response, 202);
       } catch (error) {
         return json({ ok: false, error: "history_storage_failed", message: String(error?.message || error).slice(0, 240),
           received: clean.length, inserted_before_failure: inserted }, 503);
