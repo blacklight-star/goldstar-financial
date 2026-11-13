@@ -63,7 +63,7 @@ test("isolated Preview read key is limited to the three MT5 read-only routes", a
   assert.equal(allowed.status, 200);
   const denied = await worker.fetch(get("/status", { "X-Goldstar-MT5-Preview-Key": "mt5-preview-only-test-key" }), bindings, {});
   assert.equal(denied.status, 401);
-  assert.equal(market.state.queries.length, 2);
+  assert.equal(market.state.queries.length, 3);
 });
 
 test("MT5 latest joins positions and ticks only to the newest snapshot", async () => {
