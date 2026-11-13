@@ -15,6 +15,7 @@ function makeMarketDb() {
         async first() {
           if (/COUNT\(\*\)/i.test(sql)) return { snapshots_total: 400, last_received_at: latest.received_at };
           if (/FROM mt5_terminal_snapshots/i.test(sql)) return latest;
+          if (/FROM mt5_live_ticks/i.test(sql)) return { symbols_count: 10, last_observed_at: "2026-11-13T00:00:00.000Z" };
           return null;
         },
         async all() {
@@ -44,6 +45,8 @@ test("MT5 status is available to the L1 bridge and exposes snapshot counts", asy
   assert.equal(body.snapshots_total, 400);
   assert.equal(body.mode, "demo_read_only");
   assert.equal(body.latest.account_login, "8096845");
+  assert.equal(body.live_ticks_symbols, 10);
+  assert.equal(body.live_ticks_last_observed_at, "2026-11-13T00:00:00.000Z");
   assert.ok(market.state.queries.every(q => /^SELECT\b/i.test(q.sql.trim())));
 });
 
