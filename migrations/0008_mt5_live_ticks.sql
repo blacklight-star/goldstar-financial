@@ -18,3 +18,7 @@ CREATE INDEX IF NOT EXISTS idx_mt5_live_ticks_symbol_time
 
 CREATE INDEX IF NOT EXISTS idx_mt5_live_ticks_observed
   ON mt5_live_ticks(observed_at);
+
+-- Supports bounded status queries, keyset pagination and rolling OHLC retention.
+CREATE INDEX IF NOT EXISTS idx_mt5_ohlc_symbol_tf_timemsc
+  ON mt5_ohlc_bars(symbol,timeframe,time_msc DESC);
