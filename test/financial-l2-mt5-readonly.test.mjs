@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import worker from "../src/worker.js";
 
 const L1_KEY = "l1-bridge-test-key";
-function makeMarketDb() {
+function makeMarketDb({ emptyLiveTicks = false } = {}) {
   const state = { queries: [] };
   const latest = { snapshot_id: "snap-001", received_at: "2026-11-12T20:58:58.459Z", account_login: "8096845", account_server: "AMarkets-Demo", currency: "USD", leverage: 100, balance: 10000, equity: 10000, margin: 0, free_margin: 10000, margin_level: 0, terminal_connected: 1, trade_allowed: 1, positions_count: 0, ticks_count: 30 };
   const DB = {
@@ -20,7 +20,8 @@ function makeMarketDb() {
         },
         async all() {
           if (/FROM mt5_positions/i.test(sql)) return { results: [] };
-          if (/FROM mt5_live_ticks/i.test(sql)) return { results: [{ account_login: "8096845", symbol: "EURUSD", bid: 1.08, ask: 1.081, last_price: 1.0805, time_msc: 1794517138459, source_server: "AMarkets-Demo", terminal_build: 6295, observed_at: "2026-11-12T21:28:57.891Z" }] };
+          if (/FROM mt5_live_ticks/i.test(sql)) return { results: emptyLiveTicks ? [] : [{ account_login: "8096845", symbol: "EURUSD", bid: 1.08, ask: 1.081, last_price: 1.0805, time_msc: 1794517138459, source_server: "AMarkets-Demo", terminal_build: 6295, observed_at: "2026-11-12T21:28:57.891Z" }] };
+          if (/FROM mt5_symbol_ticks/i.test(sql)) return { results: [{ symbol: "EURUSD", bid: 1.08, ask: 1.081, last_price: 1.0805, time_msc: 1794517138459 }] };
           if (/FROM mt5_ohlc_bars/i.test(sql)) return { results: [{ symbol: "XAUUSD", timeframe: "M15", bar_time_utc: "2026-11-12T20:45:00.000Z", time_msc: 1794516300000, open: 2000, high: 2010, low: 1990, close: 2005, tick_volume: 12, real_volume: 0, spread_points: 20, source_server: "AMarkets-Demo", terminal_build: 5000, collected_at: "2026-11-12T20:46:00.000Z" }] };
           return { results: [] };
         }
@@ -145,4 +146,18 @@ test("MT5 history supports keyset pagination without offset scans", async () => 
   assert.deepEqual(market.state.queries[0].params, ["XAUUSD", "M5", 1794516300000, 500]);
   const body = await response.json();
   assert.equal(body.target_bars, 20000);
+});
+
+
+test("MT5 latest falls back to legacy snapshot-linked ticks during staged EA migration", async () => {
+  const market = makeMarketDb({ emptyLiveTicks: true });
+  const bindings = { API_KEY: "l2-api-test-key", L1_BRIDGE_KEY: L1_KEY, MARKET_DB: market.DB };
+  const response = await worker.fetch(get("/mt5/latest", { "X-Goldstar-Bridge-Key": L1_KEY }), bindings, {});
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ticks.length, 1);
+  assert.equal(body.ticks[0].symbol, "EURUSD");
+  const fallback = market.state.queries.find(q => /FROM mt5_symbol_ticks/i.test(q.sql));
+  assert.ok(fallback);
+  assert.deepEqual(fallback.params, ["snap-001"]);
 });
