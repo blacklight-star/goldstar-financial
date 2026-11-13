@@ -1,0 +1,19 @@
+name = "goldstar-trainer-staging"
+main = "trainer/worker.js"
+compatibility_date = "2026-11-06"
+preview_urls = true
+
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+binding = "KNOWLEDGE"
+id = "77b13f4018e3465ebd5e754482d3c5a2"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "goldstar_nds_staging"
+database_id = "274a18a3-0d7e-402c-9ae8-904aa16cd0ff"
+
+[secrets]
+required = ["NDS_EVIDENCE_HMAC_KEY", "GOLDSTAR_BRIDGE_SECRET"]

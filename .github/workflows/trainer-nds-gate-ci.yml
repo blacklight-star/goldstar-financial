@@ -1,0 +1,166 @@
+name: trainer-nds-gate-ci
+on:
+  push:
+    branches:
+      - trainer/nds-source-gate-v1
+  pull_request:
+    branches:
+      - main
+jobs:
+  trainer-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node --test trainer/worker.test.js
+
+      - name: Live immutable Trainer V31 preview checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://aa08400e-goldstar-trainer-staging.goldstar-nsl83.workers.dev"
+
+          health="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 "$BASE/health")"
+          HEALTH="$health" node -e '
+            const data = JSON.parse(process.env.HEALTH);
+            if (data.ok !== true || data.scheduler !== "paused; no Cron triggers configured") {
+              console.error("Trainer V31 health check failed:", data);
+              process.exit(1);
+            }
+            console.log("Trainer V31 health OK; scheduler remains paused");
+          '
+
+          parser="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 "$BASE/__preview/parser-selftest")"
+          PARSER="$parser" node -e '
+            const data = JSON.parse(process.env.PARSER);
+            if (data.success !== true || !data.checks || Object.values(data.checks).some(value => value !== true)) {
+              console.error("Trainer V31 parser self-test failed:", data);
+              process.exit(1);
+            }
+            console.log("Trainer V31 parser self-test OK");
+          '
+
+          # Fixed deterministic sample: only the HMAC signature crosses the Worker boundary.
+          hmac_sample="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 "$BASE/__preview/hmac-sample")"
+          hmac_signature="$(HMAC_SAMPLE="$hmac_sample" node -e '
+            const data = JSON.parse(process.env.HMAC_SAMPLE);
+            const signature = data && data.ok === true && data.sample && data.sample.sourceEvidenceSignature;
+            if (typeof signature !== "string" || !/^[a-f0-9]{64}$/.test(signature)) {
+              console.error("Trainer V31 HMAC sample unavailable or malformed");
+              process.exit(1);
+            }
+            process.stdout.write(signature);
+          ')"
+          L2_BASE="https://d0a64b20-goldstar-financial-v3.goldstar-nsl83.workers.dev"
+          hmac_verify="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 \
+            -H "Content-Type: application/json" -d "{\"signature\":\"$hmac_signature\"}" \
+            "$L2_BASE/__preview/hmac-verify")"
+          HMAC_VERIFY="$hmac_verify" node -e '
+            const data = JSON.parse(process.env.HMAC_VERIFY);
+            if (data.ok !== true || data.signatureValid !== true) {
+              console.error("Trainer/L2 HMAC key parity failed:", data);
+              process.exit(1);
+            }
+            console.log("Trainer V31 and Financial L2 V36 verified the same fixed HMAC fixture; no secret disclosed");
+          '
+
+
+          primary_catalog="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 "$BASE/__preview/primary-source-catalog")"
+          PRIMARY_CATALOG="$primary_catalog" node -e '
+            const data = JSON.parse(process.env.PRIMARY_CATALOG);
+            const sources = Array.isArray(data.sources) ? data.sources : [];
+            const english = sources.find(source => source.documentId === "129627974");
+            const farsi = sources.find(source => source.documentId === "129628090");
+            if (data.ok !== true || data.fetchedFromAcademia !== false ||
+                data.persisted !== false || data.aiCalled !== false ||
+                sources.length !== 5 || !english || !farsi ||
+                english.authorityTier !== "primary" ||
+                farsi.authorityTier !== "primary" ||
+                english.sourceOriginType !== "primary_author_published_source" ||
+                english.sourceCaptureMethod !== "academia_account_pdf_download" ||
+                english.automatedSiteAccessAllowed !== false ||
+                english.acquisitionMode !== "user_initiated_first_party_download") {
+              console.error("Trainer V31 Academia primary-source catalog failed:", JSON.stringify(data, null, 2));
+              process.exit(1);
+            }
+            console.log("Trainer V31 Academia source authority is primary; acquisition remains first-party/manual; no automated site access");
+          '
+
+          source_registry="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 20 "$BASE/__preview/source-registry-diagnostics")"
+          SOURCE_REGISTRY="$source_registry" node -e '
+            const data = JSON.parse(process.env.SOURCE_REGISTRY);
+            if (data.ok !== true || data.readOnly !== true || data.persisted !== false || data.aiCalled !== false ||
+                data.fetchedFromAcademia !== false || data.documents !== 6 ||
+                data.primaryAuthorDocuments !== 5 || data.ownerSuppliedQuarantinedDocuments !== 1 ||
+                data.pageTotals?.pages !== 202 || data.pageTotals?.imported !== 202 ||
+                data.pageTotals?.text !== 190 || data.pageTotals?.visual !== 12 ||
+                data.reviewFlags?.total !== 28 || data.curriculum?.total !== 12 ||
+                data.ruleCandidates?.total !== 16 || data.ruleCandidates?.unapproved !== 16 ||
+                data.ruleCandidates?.executionIneligible !== 16 ||
+                data.assessment?.total !== 25 || data.assessment?.notPiloted !== 25) {
+              console.error("Trainer staged NDS source registry check failed:", JSON.stringify(data, null, 2));
+              process.exit(1);
+            }
+            console.log("Trainer staged corpus verified: 5 primary author PDFs + 1 quarantined supplement; 202/202 pages indexed; 190 text, 12 visual-only; 28 review flags; 12 curriculum modules; 16 unapproved/non-executable candidates; 25 draft assessment items not yet piloted; no AI, no writes");
+          '
+
+          tgme_archive="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 35 "$BASE/__preview/tgme-archive-diagnostics")"
+          TGME_ARCHIVE="$tgme_archive" node -e '
+            const data = JSON.parse(process.env.TGME_ARCHIVE);
+            const sources = Array.isArray(data.sources) ? data.sources : [];
+            if (data.ok !== true || data.dryRun !== true || data.persisted !== false || data.aiCalled !== false ||
+                data.sampleCount !== 6 || sources.length !== 6 ||
+                sources.some(item => item.success !== true || item.sourceOriginType !== "third_party_telegram_archive" ||
+                  item.sourceCaptureMethod !== "tgme_public_post_html" || item.textLength < 70 ||
+                  !/^https:\/\/t\.me\/fuzzylogic_nds\/\d+$/.test(item.canonicalPostUrl || "") ||
+                  !/^https:\/\/tg\.me\/fuzzylogic_nds\/\d+$/.test(item.sourceArchiveUrl || ""))) {
+              console.error("Trainer V31 TG.ME archive metadata check failed:", JSON.stringify(data, null, 2));
+              process.exit(1);
+            }
+            console.log("Trainer V31 TG.ME stable post IDs and captions verified; source remains metadata-only; no AI or persistence");
+            console.log(JSON.stringify(sources.map(item => ({
+              postId: item.postId, lesson: item.lesson, videoTags: item.diagnostics.videoTagCount,
+              videoSources: item.diagnostics.videoSourceCount, directMediaUrls: item.diagnostics.directMediaUrlCount
+            }))));
+          '
+
+          diagnostics="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 35 "$BASE/__preview/source-diagnostics")"
+          DIAGNOSTICS="$diagnostics" node -e '
+            const data = JSON.parse(process.env.DIAGNOSTICS);
+            const configured = Array.isArray(data.channels)
+              ? data.channels.filter(channel => channel.sourceRole === "configured_source")
+              : [];
+            const expected = ["NDS4ALLVIDEOS", "FuzzyLogic_NDS", "BNJ1I", "cottagends"];
+            const actual = configured.map(channel => channel.channel).sort();
+            if (data.dryRun !== true || data.persisted !== false || data.aiCalled !== false ||
+                !Array.isArray(data.channels) || data.channels.length !== 8 || configured.length !== 4 ||
+                configured.some(channel => channel.diagnostics?.httpStatus !== 200 || channel.diagnostics?.responseOk !== true) ||
+                !configured.some(channel => channel.channel === "NDS4ALLVIDEOS" && channel.postCount >= 1) ||
+                actual.join(",") !== expected.sort().join(",") ||
+                data.channels.filter(channel => channel.sourceRole === "diagnostic_only").length !== 4) {
+              console.error("Trainer V31 Telegram retrieval diagnostics failed:", JSON.stringify(data, null, 2));
+              process.exit(1);
+            }
+            const unavailable = configured.filter(channel => channel.postCount === 0).map(channel => channel.channel);
+            console.log("Telegram source diagnostics completed. NDS4ALLVIDEOS posts:", configured.find(channel => channel.channel === "NDS4ALLVIDEOS").postCount);
+            console.log("Official channels with no public posts remain explicitly pending (not substituted):", JSON.stringify(unavailable));
+            console.log("All four configured official sources returned HTTP 200; no AI; no persistence.");
+            console.log(JSON.stringify(data.channels.map(channel => ({
+              channel: channel.channel, role: channel.sourceRole, status: channel.retrievalStatus,
+              success: channel.success, posts: channel.postCount || 0
+            }))));
+          '
+
+          dry_run="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 30 "$BASE/__preview/dry-run?channel=NDS4ALLVIDEOS")"
+          DRY_RUN="$dry_run" node -e '
+            const data = JSON.parse(process.env.DRY_RUN);
+            if (data.dryRun !== true || data.fetchOnly !== true || data.persisted !== false ||
+                !Number.isInteger(data.postCount) || typeof data.channel !== "string") {
+              console.error("Trainer V31 fetch-only dry-run failed:", data);
+              process.exit(1);
+            }
+            console.log("Trainer V31 Telegram fetch-only dry-run OK; no AI or persistence path invoked");
+          '
+

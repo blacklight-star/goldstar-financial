@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-09",
+  "policy": {
+    "authorityOrder": [
+      "primary_author_published_source",
+      "official_telegram_channel",
+      "third_party_telegram_archive"
+    ],
+    "academiaIsPrimarySource": true,
+    "academiaAcquisition": "user_initiated_first_party_pdf_download",
+    "automatedAcademiaSiteAccessAllowed": false,
+    "noModelFineTuning": true,
+    "telegramSourcesRemainUnchanged": true,
+    "approvalRequiresL2EvidenceVerification": true,
+    "noAutomaticTrainingOrApproval": true
+  },
+  "sources": [
+    {
+      "id": "academia-nds-strategy-english-v1",
+      "title": "NDS Strategy English Version",
+      "author": "Dr. Iraj Jafarian",
+      "platform": "Academia.edu",
+      "documentId": "129627974",
+      "canonicalUrl": "https://www.academia.edu/129627974/NDS_Strategy_English_Version",
+      "sourceOriginType": "primary_author_published_source",
+      "sourceCaptureMethod": "academia_account_pdf_download",
+      "sourceRole": "primary_core_methodology",
+      "status": "primary_source_manual_download_pending",
+      "authorityTier": "primary",
+      "format": "application/pdf",
+      "acquisitionMode": "user_initiated_first_party_download",
+      "automatedSiteAccessAllowed": false,
+      "availableForManualImport": true,
+      "provenanceBasis": "Listed under Papers by Dr Iraj Jafarian on his Academia profile; the NDS Farsi listing explicitly describes NDS as designed by Dr Iraj Jafarian.",
+      "usageBoundary": "Use only via user-initiated first-party individual PDF download. No automated site scraping/download. Do not fine-tune models or redistribute the PDF; check author/platform permissions before any broader/commercial use.",
+      "nextStep": "Manual PDF acquisition using the owner's existing free Academia account, then controlled document import with SHA-256, page count, text extraction, excerpt hashes, and HMAC provenance."
+    },
+    {
+      "id": "academia-nds-farsi",
+      "title": "NDS farsi",
+      "author": "Dr. Iraj Jafarian",
+      "platform": "Academia.edu",
+      "documentId": "129628090",
+      "canonicalUrl": "https://www.academia.edu/129628090/NDS_farsi",
+      "sourceOriginType": "primary_author_published_source",
+      "sourceCaptureMethod": "academia_account_pdf_download",
+      "sourceRole": "primary_core_methodology",
+      "status": "primary_source_manual_download_pending",
+      "authorityTier": "primary",
+      "format": "application/pdf",
+      "acquisitionMode": "user_initiated_first_party_download",
+      "automatedSiteAccessAllowed": false,
+      "availableForManualImport": true,
+      "provenanceBasis": "Listed under Papers by Dr Iraj Jafarian; its profile description explicitly states NDS was designed by Dr Iraj Jafarian.",
+      "nextStep": "Manual PDF acquisition using the owner's existing free Academia account, then controlled document import."
+    },
+    {
+      "id": "academia-nds-money-management",
+      "title": "Advanced Money Management Strategy Applicable to Nodal Displacement Geometry",
+      "author": "Dr. Iraj Jafarian",
+      "platform": "Academia.edu",
+      "documentId": "122966805",
+      "canonicalUrl": "https://www.academia.edu/122966805/Advanced_Money_Management_Strategy_Applicable_to_Nodal_Displacement_Geometry",
+      "sourceOriginType": "primary_author_published_source",
+      "sourceCaptureMethod": "academia_account_pdf_download",
+      "sourceRole": "primary_author_supplement",
+      "status": "primary_source_manual_download_pending",
+      "authorityTier": "primary",
+      "format": "application/pdf",
+      "acquisitionMode": "user_initiated_first_party_download",
+      "automatedSiteAccessAllowed": false,
+      "availableForManualImport": true
+    },
+    {
+      "id": "academia-nds-ai-quant",
+      "title": "Advanced Quantitative Trading: Integrating AI with NDS",
+      "authors": [
+        "Dr. Iraj Jafarian",
+        "Ramin Rostami"
+      ],
+      "platform": "Academia.edu",
+      "documentId": "122832409",
+      "canonicalUrl": "https://www.academia.edu/122832409/Advanced_Quantitative_Trading_Integrating_Artificial_Intelligence_with_Nodal_Displacement_Sequencing",
+      "sourceOriginType": "primary_author_published_source",
+      "sourceCaptureMethod": "academia_account_pdf_download",
+      "sourceRole": "coauthored_author_supplement",
+      "status": "primary_source_manual_download_pending",
+      "authorityTier": "primary",
+      "format": "application/pdf",
+      "acquisitionMode": "user_initiated_first_party_download",
+      "automatedSiteAccessAllowed": false,
+      "availableForManualImport": true
+    },
+    {
+      "id": "academia-nds-new-approach",
+      "title": "Nodal Displacement Sequencing (NDS) New Approach",
+      "author": "Dr. Iraj Jafarian",
+      "platform": "Academia.edu",
+      "documentId": "122576333",
+      "canonicalUrl": "https://www.academia.edu/122576333/Nodal_Displacement_Sequencing_NDS_New_Approach",
+      "sourceOriginType": "primary_author_published_source",
+      "sourceCaptureMethod": "academia_account_pdf_download",
+      "sourceRole": "primary_author_supplement",
+      "status": "primary_source_manual_download_pending",
+      "authorityTier": "primary",
+      "format": "application/pdf",
+      "acquisitionMode": "user_initiated_first_party_download",
+      "automatedSiteAccessAllowed": false,
+      "availableForManualImport": true
+    },
+    {
+      "id": "tgme-fuzzylogic-nds-post-index",
+      "title": "TG.ME individual post index for FuzzyLogic_NDS / NDS Learning Hub",
+      "platform": "TG.ME",
+      "canonicalUrl": "https://tg.me/fuzzylogic_nds",
+      "sourceOriginType": "third_party_telegram_archive",
+      "sourceCaptureMethod": "tgme_public_post_html",
+      "sourceRole": "post_identity_and_caption_metadata_only",
+      "ingestionEnabled": false,
+      "status": "metadata_only_lesson_media_or_transcript_required",
+      "disclaimer": "TG.ME is an independent third-party presentation layer. Verified data currently includes individual post IDs, canonical Telegram permalinks, and caption/title text only; not full lesson video/transcript. No rule extraction or L2 eligibility.",
+      "posts": [
+        {
+          "postId": "983",
+          "lesson": "65",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/983",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/983"
+        },
+        {
+          "postId": "972",
+          "lesson": "64",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/972",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/972"
+        },
+        {
+          "postId": "967",
+          "lesson": "63-2",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/967",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/967"
+        },
+        {
+          "postId": "965",
+          "lesson": "63-1",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/965",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/965"
+        },
+        {
+          "postId": "958",
+          "lesson": "62",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/958",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/958"
+        },
+        {
+          "postId": "944",
+          "lesson": "61",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/944",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/944"
+        },
+        {
+          "postId": "937",
+          "lesson": "60",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/937",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/937"
+        },
+        {
+          "postId": "936",
+          "lesson": "59",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/936",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/936"
+        },
+        {
+          "postId": "935",
+          "lesson": "58",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/935",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/935"
+        },
+        {
+          "postId": "934",
+          "lesson": "57",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/934",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/934"
+        },
+        {
+          "postId": "933",
+          "lesson": "56",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/933",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/933"
+        },
+        {
+          "postId": "931",
+          "lesson": "55",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/931",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/931"
+        },
+        {
+          "postId": "930",
+          "lesson": "54",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/930",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/930"
+        },
+        {
+          "postId": "929",
+          "lesson": "53",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/929",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/929"
+        },
+        {
+          "postId": "926",
+          "lesson": "52",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/926",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/926"
+        },
+        {
+          "postId": "924",
+          "lesson": "50",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/924",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/924"
+        },
+        {
+          "postId": "922",
+          "lesson": "49",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/922",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/922"
+        },
+        {
+          "postId": "921",
+          "lesson": "48",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/921",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/921"
+        },
+        {
+          "postId": "919",
+          "lesson": "47",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/919",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/919"
+        },
+        {
+          "postId": "907",
+          "lesson": "45",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/907",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/907"
+        },
+        {
+          "postId": "906",
+          "lesson": "44",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/906",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/906"
+        },
+        {
+          "postId": "905",
+          "lesson": "43",
+          "archiveUrl": "https://tg.me/fuzzylogic_nds/905",
+          "canonicalTelegramUrl": "https://t.me/fuzzylogic_nds/905"
+        }
+      ]
+    },
+    {
+      "id": "telemetr-fuzzylogic-nds-archive",
+      "title": "Public archive for Fuzzy Logic (NDS) Telegram channel",
+      "platform": "Telemetr",
+      "canonicalUrl": "https://telemetr.io/en/channels/1645847716-fuzzylogic_nds/posts",
+      "sourceOriginType": "third_party_telegram_archive",
+      "sourceCaptureMethod": "telemetr_archive_html",
+      "sourceRole": "historical_cross_reference_only",
+      "ingestionEnabled": false,
+      "status": "catalog_only_not_ingestion_ready",
+      "reason": "No stable individually verified post evidence chain was established for Trainer intake."
+    }
+  ]
+}
