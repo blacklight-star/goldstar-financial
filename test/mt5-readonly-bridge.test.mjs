@@ -76,6 +76,8 @@ test("valid demo snapshot writes account and ticks atomically", async () => {
   assert.equal(body.ticks, 1);
   assert.equal(state.batches.length, 2); // snapshot write plus best-effort retention cleanup
   assert.equal(state.batches[0].length, 2);
+  assert.equal(state.batches[1].length, 4);
+  assert.match(state.batches[1][2].sql, /DELETE FROM mt5_live_ticks WHERE observed_at/);
   assert.match(state.batches[0][0].sql, /INSERT INTO mt5_terminal_snapshots/);
   assert.match(state.batches[0][1].sql, /INSERT INTO mt5_symbol_ticks/);
 });
