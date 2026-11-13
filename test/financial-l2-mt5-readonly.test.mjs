@@ -129,7 +129,9 @@ test("MT5 latest reads the independent per-symbol live tick table", async () => 
   const body = await response.json();
   assert.equal(body.ticks.length, 1);
   assert.equal(body.ticks[0].symbol, "EURUSD");
-  assert.match(market.state.queries[2].sql, /FROM mt5_live_ticks/);
+  const liveTickQuery = market.state.queries.find(q => /FROM mt5_live_ticks/i.test(q.sql));
+  assert.match(liveTickQuery.sql, /WHERE account_login = \\?/);
+  assert.deepEqual(liveTickQuery.params, ["8096845"]);
 });
 
 test("MT5 history supports keyset pagination without offset scans", async () => {
