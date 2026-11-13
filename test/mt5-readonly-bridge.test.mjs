@@ -74,7 +74,7 @@ test("valid demo snapshot writes account and ticks atomically", async () => {
   assert.equal(body.mode, "demo_read_only");
   assert.equal(body.positions, 0);
   assert.equal(body.ticks, 1);
-  assert.equal(state.batches.length, 1);
+  assert.equal(state.batches.length, 2); // snapshot write plus best-effort retention cleanup
   assert.equal(state.batches[0].length, 2);
   assert.match(state.batches[0][0].sql, /INSERT INTO mt5_terminal_snapshots/);
   assert.match(state.batches[0][1].sql, /INSERT INTO mt5_symbol_ticks/);
