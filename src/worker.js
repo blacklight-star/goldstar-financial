@@ -180,6 +180,13 @@ export default {
                   "SELECT t.account_login, t.symbol, t.bid, t.ask, t.last_price, t.time_msc, t.source_server, t.terminal_build, t.observed_at FROM mt5_live_ticks t INNER JOIN (SELECT account_login, symbol, MAX(time_msc) AS max_time_msc FROM mt5_live_ticks WHERE account_login = ? GROUP BY account_login, symbol) latest ON latest.account_login = t.account_login AND latest.symbol = t.symbol AND latest.max_time_msc = t.time_msc ORDER BY t.symbol"
                 ).bind(latestSnapshot.account_login).all()
               : { results: [] };
+            // Compatibility during rollout: an older EA may still populate snapshot-linked ticks
+            // until the new independent one-minute tick collector is installed.
+            if (latestSnapshot && (!tickRows || !Array.isArray(tickRows.results) || tickRows.results.length === 0)) {
+              tickRows = await env.MARKET_DB.prepare(
+                "SELECT symbol, bid, ask, last_price, time_msc FROM mt5_symbol_ticks WHERE snapshot_id = ? ORDER BY symbol"
+              ).bind(latestSnapshot.snapshot_id).all();
+            }
             return ok({
               mode: "demo_read_only",
               available: !!latestSnapshot,
