@@ -243,6 +243,7 @@ export default {
           await env.DB.batch([
             env.DB.prepare("DELETE FROM mt5_positions WHERE snapshot_id IN (SELECT snapshot_id FROM mt5_terminal_snapshots WHERE received_at < ?)").bind(snapshotCutoff),
             env.DB.prepare("DELETE FROM mt5_symbol_ticks WHERE snapshot_id IN (SELECT snapshot_id FROM mt5_terminal_snapshots WHERE received_at < ?)").bind(legacyTickCutoff),
+            env.DB.prepare("DELETE FROM mt5_live_ticks WHERE observed_at < ?").bind(legacyTickCutoff),
             env.DB.prepare("DELETE FROM mt5_terminal_snapshots WHERE received_at < ?").bind(snapshotCutoff)
           ]);
         } catch (retentionError) {
